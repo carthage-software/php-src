@@ -14,8 +14,13 @@ pub struct BaseConvertResult {
     pub had_invalid_chars: c_int,
 }
 
+/// Convert number in input string from from_base to to_base
+///
+/// # Safety
+///
+/// Caller must ensure input points to length valid bytes
 #[no_mangle]
-pub unsafe extern "C" fn php_rust_base_convert(
+pub unsafe extern "C" fn php_oxidized_base_convert(
     input: *const c_char,
     length: size_t,
     from_base: c_int,
@@ -89,7 +94,8 @@ mod tests {
     fn test_base_convert() {
         unsafe {
             let input = b"101";
-            let result = php_rust_base_convert(input.as_ptr() as *const c_char, input.len(), 2, 16);
+            let result =
+                php_oxidized_base_convert(input.as_ptr() as *const c_char, input.len(), 2, 16);
             assert!(!result.output.is_null());
             let output = std::slice::from_raw_parts(result.output as *const u8, result.length);
             assert_eq!(output, b"5");
@@ -101,7 +107,8 @@ mod tests {
     fn test_invalid_base() {
         unsafe {
             let input = b"123";
-            let result = php_rust_base_convert(input.as_ptr() as *const c_char, input.len(), 1, 10);
+            let result =
+                php_oxidized_base_convert(input.as_ptr() as *const c_char, input.len(), 1, 10);
             assert!(result.output.is_null());
         }
     }

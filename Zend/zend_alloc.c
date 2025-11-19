@@ -84,8 +84,8 @@ typedef int pid_t;
 #include <fcntl.h>
 #include <errno.h>
 
-#ifdef HAVE_ZEND_RUST
-# include "rust/zend_rust.h"
+#ifdef HAVE_PHP_OXIDIZED
+# include "oxidized/php_oxidized.h"
 #endif
 #ifdef __SANITIZE_ADDRESS__
 # include <sanitizer/asan_interface.h>
@@ -2884,8 +2884,8 @@ static ZEND_COLD ZEND_NORETURN void zend_out_of_memory(void);
 
 ZEND_API char* ZEND_FASTCALL zend_strndup(const char *s, size_t length)
 {
-#ifdef HAVE_ZEND_RUST
-	char *p = zend_rust_strndup(s, length);
+#ifdef HAVE_PHP_OXIDIZED
+	char *p = zend_oxidized_strndup(s, length);
 	if (UNEXPECTED(p == NULL)) {
 		if (length + 1 == 0) {
 			zend_error_noreturn(E_ERROR, "Possible integer overflow in memory allocation (1 * %zu + 1)", length);
@@ -3555,8 +3555,8 @@ ZEND_API zend_mm_heap *zend_mm_startup_ex(const zend_mm_handlers *handlers, void
 
 ZEND_API void * __zend_malloc(size_t len ZEND_FILE_LINE_DC ZEND_FILE_LINE_ORIG_DC)
 {
-#ifdef HAVE_ZEND_RUST
-	void *tmp = zend_rust_malloc(len);
+#ifdef HAVE_PHP_OXIDIZED
+	void *tmp = zend_oxidized_malloc(len);
 	if (EXPECTED(tmp || !len)) {
 		return tmp;
 	}
@@ -3582,8 +3582,8 @@ ZEND_API void * __zend_calloc(size_t nmemb, size_t len ZEND_FILE_LINE_DC ZEND_FI
 
 ZEND_API void * __zend_realloc(void *p, size_t len ZEND_FILE_LINE_DC ZEND_FILE_LINE_ORIG_DC)
 {
-#ifdef HAVE_ZEND_RUST
-	p = zend_rust_realloc(p, len);
+#ifdef HAVE_PHP_OXIDIZED
+	p = zend_oxidized_realloc(p, len);
 	if (EXPECTED(p || !len)) {
 		return p;
 	}
@@ -3599,8 +3599,8 @@ ZEND_API void * __zend_realloc(void *p, size_t len ZEND_FILE_LINE_DC ZEND_FILE_L
 
 ZEND_API void __zend_free(void *p ZEND_FILE_LINE_DC ZEND_FILE_LINE_ORIG_DC)
 {
-#ifdef HAVE_ZEND_RUST
-	zend_rust_free(p);
+#ifdef HAVE_PHP_OXIDIZED
+	zend_oxidized_free(p);
 #else
 	free(p);
 #endif

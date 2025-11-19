@@ -15,7 +15,11 @@
  */
 
 #include "php.h"
+#ifdef HAVE_PHP_OXIDIZED
+#include "oxidized/php_oxidized.h"
+#endif
 
+#ifndef HAVE_PHP_OXIDIZED
 /* {{{ reference_levdist
  * reference implementation, only optimized for memory usage, not speed */
 static zend_long reference_levdist(const zend_string *string1, const zend_string *string2, zend_long cost_ins, zend_long cost_rep, zend_long cost_del )
@@ -73,6 +77,16 @@ static zend_long reference_levdist(const zend_string *string1, const zend_string
 	return c0;
 }
 /* }}} */
+#else
+static zend_long reference_levdist(const zend_string *string1, const zend_string *string2, zend_long cost_ins, zend_long cost_rep, zend_long cost_del )
+{
+	return (zend_long)php_oxidized_levenshtein(
+		ZSTR_VAL(string1), ZSTR_LEN(string1),
+		ZSTR_VAL(string2), ZSTR_LEN(string2),
+		(int)cost_ins, (int)cost_rep, (int)cost_del
+	);
+}
+#endif
 
 /* {{{ Calculate Levenshtein distance between two strings */
 PHP_FUNCTION(levenshtein)

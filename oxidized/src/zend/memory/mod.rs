@@ -6,8 +6,13 @@ use libc::size_t;
 
 mod impls;
 
+/// Duplicate up to n bytes from a C string
+///
+/// # Safety
+///
+/// Caller must ensure s points to a valid null-terminated C string
 #[no_mangle]
-pub unsafe extern "C" fn zend_rust_strndup(s: *const c_char, n: size_t) -> *mut c_char {
+pub unsafe extern "C" fn zend_oxidized_strndup(s: *const c_char, n: size_t) -> *mut c_char {
     if s.is_null() {
         return ptr::null_mut();
     }
@@ -34,18 +39,33 @@ pub unsafe extern "C" fn zend_rust_strndup(s: *const c_char, n: size_t) -> *mut 
     }
 }
 
+/// Allocate memory of given size
+///
+/// # Safety
+///
+/// Wrapper around libc malloc
 #[no_mangle]
-pub unsafe extern "C" fn zend_rust_malloc(size: size_t) -> *mut c_void {
+pub unsafe extern "C" fn zend_oxidized_malloc(size: size_t) -> *mut c_void {
     libc::malloc(size)
 }
 
+/// Free allocated memory
+///
+/// # Safety
+///
+/// Caller must ensure ptr was allocated by malloc/realloc or is null
 #[no_mangle]
-pub unsafe extern "C" fn zend_rust_free(ptr: *mut c_void) {
+pub unsafe extern "C" fn zend_oxidized_free(ptr: *mut c_void) {
     libc::free(ptr);
 }
 
+/// Reallocate memory to new size
+///
+/// # Safety
+///
+/// Caller must ensure ptr was allocated by malloc/realloc or is null
 #[no_mangle]
-pub unsafe extern "C" fn zend_rust_realloc(ptr: *mut c_void, size: size_t) -> *mut c_void {
+pub unsafe extern "C" fn zend_oxidized_realloc(ptr: *mut c_void, size: size_t) -> *mut c_void {
     libc::realloc(ptr, size)
 }
 
@@ -57,7 +77,7 @@ mod tests {
     fn test_strndup_ffi() {
         unsafe {
             let input = b"hello world\0";
-            let result = zend_rust_strndup(input.as_ptr() as *const c_char, 5);
+            let result = zend_oxidized_strndup(input.as_ptr() as *const c_char, 5);
 
             assert!(!result.is_null());
 
@@ -75,30 +95,30 @@ mod tests {
     #[test]
     fn test_malloc_free() {
         unsafe {
-            let ptr = zend_rust_malloc(100);
+            let ptr = zend_oxidized_malloc(100);
             assert!(!ptr.is_null());
 
             *(ptr as *mut u8) = 42;
             assert_eq!(*(ptr as *mut u8), 42);
 
-            zend_rust_free(ptr);
+            zend_oxidized_free(ptr);
         }
     }
 
     #[test]
     fn test_realloc() {
         unsafe {
-            let ptr = zend_rust_malloc(10);
+            let ptr = zend_oxidized_malloc(10);
             assert!(!ptr.is_null());
 
             *(ptr as *mut u8) = 42;
 
-            let new_ptr = zend_rust_realloc(ptr, 100);
+            let new_ptr = zend_oxidized_realloc(ptr, 100);
             assert!(!new_ptr.is_null());
 
             assert_eq!(*(new_ptr as *mut u8), 42);
 
-            zend_rust_free(new_ptr);
+            zend_oxidized_free(new_ptr);
         }
     }
 }

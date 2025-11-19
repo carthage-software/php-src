@@ -1712,23 +1712,23 @@ PHP_ADD_SOURCES_X([/main],
   [PHP_BINARY_OBJS])
 
 dnl -------------------------------------------------------------------------
-dnl Zend Rust components configuration
+dnl PHP Oxidized components configuration
 dnl -------------------------------------------------------------------------
 
-PHP_ARG_ENABLE([zend-rust],
-  [whether to enable Rust components in Zend],
-  [AS_HELP_STRING([--enable-zend-rust],
+PHP_ARG_ENABLE([php-oxidized],
+  [whether to enable PHP Oxidized components],
+  [AS_HELP_STRING([--enable-php-oxidized],
     [Enable experimental Rust-based components])],
   [no],
   [no])
 
-if test "$PHP_ZEND_RUST" != "no"; then
+if test "$PHP_PHP_OXIDIZED" != "no"; then
   AC_MSG_CHECKING([for Rust toolchain])
 
   dnl Check for cargo
   AC_CHECK_PROG([CARGO], [cargo], [cargo], [no])
   if test "$CARGO" = "no"; then
-    AC_MSG_ERROR([cargo not found. Rust toolchain is required for --enable-zend-rust.
+    AC_MSG_ERROR([cargo not found. Rust toolchain is required for --enable-php-oxidized.
 
 Install Rust from https://rustup.rs/ or use your package manager.])
   fi
@@ -1736,7 +1736,7 @@ Install Rust from https://rustup.rs/ or use your package manager.])
   dnl Check for rustc
   AC_CHECK_PROG([RUSTC], [rustc], [rustc], [no])
   if test "$RUSTC" = "no"; then
-    AC_MSG_ERROR([rustc not found. Rust toolchain is required for --enable-zend-rust.
+    AC_MSG_ERROR([rustc not found. Rust toolchain is required for --enable-php-oxidized.
 
 Install Rust from https://rustup.rs/ or use your package manager.])
   fi
@@ -1752,17 +1752,17 @@ Install Rust from https://rustup.rs/ or use your package manager.])
   fi
 
   dnl Define the feature flag
-  AC_DEFINE([HAVE_ZEND_RUST], [1], [Define to 1 if Rust components are enabled])
+  AC_DEFINE([HAVE_PHP_OXIDIZED], [1], [Define to 1 if PHP Oxidized components are enabled])
 
   dnl Set build variables
-  ZEND_RUST_DIR="$abs_srcdir/Zend/rust"
-  ZEND_RUST_TARGET_DIR="$ZEND_RUST_DIR/target"
+  PHP_OXIDIZED_DIR="$abs_srcdir/oxidized"
+  PHP_OXIDIZED_TARGET_DIR="$PHP_OXIDIZED_DIR/target"
 
   dnl Get Rust version
   RUSTC_VERSION=`$RUSTC --version | head -n1`
   AC_MSG_CHECKING([rustc version])
   AC_MSG_RESULT([$RUSTC_VERSION])
-  AC_DEFINE_UNQUOTED([ZEND_RUST_VERSION], ["$RUSTC_VERSION"], [Rust compiler version])
+  AC_DEFINE_UNQUOTED([PHP_OXIDIZED_VERSION], ["$RUSTC_VERSION"], [Rust compiler version])
 
   dnl Determine build profile (debug or release)
   if test "$PHP_DEBUG" = "yes"; then
@@ -1778,25 +1778,25 @@ Install Rust from https://rustup.rs/ or use your package manager.])
   AC_SUBST([RUSTC])
   AC_SUBST([RUSTC_VERSION])
   AC_SUBST([CBINDGEN])
-  AC_SUBST([ZEND_RUST_DIR])
-  AC_SUBST([ZEND_RUST_TARGET_DIR])
+  AC_SUBST([PHP_OXIDIZED_DIR])
+  AC_SUBST([PHP_OXIDIZED_TARGET_DIR])
   AC_SUBST([RUST_BUILD_PROFILE])
   AC_SUBST([RUST_BUILD_FLAGS])
 
   dnl Add Rust library to link path
-  ZEND_RUST_LIB_PATH="$ZEND_RUST_TARGET_DIR/$RUST_BUILD_PROFILE"
+  PHP_OXIDIZED_LIB_PATH="$PHP_OXIDIZED_TARGET_DIR/$RUST_BUILD_PROFILE"
 
   dnl Add library to linker flags
   dnl Use full path to static library and add to ZEND_EXTRA_LIBS for CLI builds
-  ZEND_EXTRA_LIBS="$ZEND_EXTRA_LIBS $ZEND_RUST_LIB_PATH/libzend_rust.a"
+  ZEND_EXTRA_LIBS="$ZEND_EXTRA_LIBS $PHP_OXIDIZED_LIB_PATH/libphp_oxidized.a"
 
   dnl Add include path for generated headers
-  PHP_ADD_INCLUDE([$ZEND_RUST_DIR])
+  PHP_ADD_INCLUDE([$PHP_OXIDIZED_DIR])
 
   dnl Add Makefile fragment
-  PHP_ADD_MAKEFILE_FRAGMENT([$abs_srcdir/Zend/rust/Makefile.frag])
+  PHP_ADD_MAKEFILE_FRAGMENT([$abs_srcdir/oxidized/Makefile.frag])
 
-  AC_MSG_NOTICE([Zend Rust components enabled (profile: $RUST_BUILD_PROFILE)])
+  AC_MSG_NOTICE([PHP Oxidized components enabled (profile: $RUST_BUILD_PROFILE)])
 fi
 
 PHP_ADD_SOURCES([Zend], m4_normalize([

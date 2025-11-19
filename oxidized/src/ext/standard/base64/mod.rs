@@ -9,8 +9,13 @@ mod impls;
 
 const PHP_BASE64_NO_PADDING: c_int = 1;
 
+/// Encode input bytes to base64 string
+///
+/// # Safety
+///
+/// Caller must ensure input points to length valid bytes and output_len is a valid pointer
 #[no_mangle]
-pub unsafe extern "C" fn php_rust_base64_encode(
+pub unsafe extern "C" fn php_oxidized_base64_encode(
     input: *const c_uchar,
     length: size_t,
     output_len: *mut size_t,
@@ -22,6 +27,7 @@ pub unsafe extern "C" fn php_rust_base64_encode(
         if !result.is_null() {
             *result = 0;
         }
+
         return result;
     }
 
@@ -42,8 +48,13 @@ pub unsafe extern "C" fn php_rust_base64_encode(
     result
 }
 
+/// Decode base64 string to bytes
+///
+/// # Safety
+///
+/// Caller must ensure input points to length valid bytes and output_len is a valid pointer
 #[no_mangle]
-pub unsafe extern "C" fn php_rust_base64_decode(
+pub unsafe extern "C" fn php_oxidized_base64_decode(
     input: *const c_uchar,
     length: size_t,
     output_len: *mut size_t,
@@ -88,7 +99,7 @@ mod tests {
         unsafe {
             let input = b"Hello";
             let mut len = 0;
-            let result = php_rust_base64_encode(input.as_ptr(), input.len(), &mut len, 0);
+            let result = php_oxidized_base64_encode(input.as_ptr(), input.len(), &mut len, 0);
             assert!(!result.is_null());
             let output = std::slice::from_raw_parts(result as *const u8, len);
             assert_eq!(output, b"SGVsbG8=");
@@ -101,11 +112,12 @@ mod tests {
         unsafe {
             let input = b"The quick brown fox jumps over the lazy dog";
             let mut enc_len = 0;
-            let encoded = php_rust_base64_encode(input.as_ptr(), input.len(), &mut enc_len, 0);
+            let encoded = php_oxidized_base64_encode(input.as_ptr(), input.len(), &mut enc_len, 0);
             assert!(!encoded.is_null());
 
             let mut dec_len = 0;
-            let decoded = php_rust_base64_decode(encoded as *const u8, enc_len, &mut dec_len, 1);
+            let decoded =
+                php_oxidized_base64_decode(encoded as *const u8, enc_len, &mut dec_len, 1);
             assert!(!decoded.is_null());
 
             let output = std::slice::from_raw_parts(decoded as *const u8, dec_len);

@@ -29,6 +29,9 @@
 #include "zend_strtod.h"
 #include "zend_exceptions.h"
 #include "zend_closures.h"
+#ifdef HAVE_PHP_OXIDIZED
+#include "oxidized/php_oxidized.h"
+#endif
 
 #include <locale.h>
 #ifdef HAVE_LANGINFO_H
@@ -1729,10 +1732,15 @@ ZEND_API zend_result ZEND_FASTCALL bitwise_or_function(zval *result, zval *op1, 
 		}
 
 		str = zend_string_alloc(Z_STRLEN_P(longer), 0);
+#ifdef HAVE_PHP_OXIDIZED
+		zend_oxidized_bitwise_or((unsigned char *)Z_STRVAL_P(op1), Z_STRLEN_P(op1), (unsigned char *)Z_STRVAL_P(op2), Z_STRLEN_P(op2), (unsigned char *)ZSTR_VAL(str));
+		ZSTR_VAL(str)[Z_STRLEN_P(longer)] = '\0';
+#else
 		for (i = 0; i < Z_STRLEN_P(shorter); i++) {
 			ZSTR_VAL(str)[i] = Z_STRVAL_P(longer)[i] | Z_STRVAL_P(shorter)[i];
 		}
 		memcpy(ZSTR_VAL(str) + i, Z_STRVAL_P(longer) + i, Z_STRLEN_P(longer) - i + 1);
+#endif
 		if (result==op1) {
 			zval_ptr_dtor_str(result);
 		}
@@ -1811,10 +1819,15 @@ ZEND_API zend_result ZEND_FASTCALL bitwise_and_function(zval *result, zval *op1,
 		}
 
 		str = zend_string_alloc(Z_STRLEN_P(shorter), 0);
+#ifdef HAVE_PHP_OXIDIZED
+		zend_oxidized_bitwise_and((unsigned char *)Z_STRVAL_P(op1), Z_STRLEN_P(op1), (unsigned char *)Z_STRVAL_P(op2), Z_STRLEN_P(op2), (unsigned char *)ZSTR_VAL(str));
+		ZSTR_VAL(str)[Z_STRLEN_P(shorter)] = '\0';
+#else
 		for (i = 0; i < Z_STRLEN_P(shorter); i++) {
 			ZSTR_VAL(str)[i] = Z_STRVAL_P(shorter)[i] & Z_STRVAL_P(longer)[i];
 		}
 		ZSTR_VAL(str)[i] = 0;
+#endif
 		if (result==op1) {
 			zval_ptr_dtor_str(result);
 		}
@@ -1893,10 +1906,15 @@ ZEND_API zend_result ZEND_FASTCALL bitwise_xor_function(zval *result, zval *op1,
 		}
 
 		str = zend_string_alloc(Z_STRLEN_P(shorter), 0);
+#ifdef HAVE_PHP_OXIDIZED
+		zend_oxidized_bitwise_xor((unsigned char *)Z_STRVAL_P(op1), Z_STRLEN_P(op1), (unsigned char *)Z_STRVAL_P(op2), Z_STRLEN_P(op2), (unsigned char *)ZSTR_VAL(str));
+		ZSTR_VAL(str)[Z_STRLEN_P(shorter)] = '\0';
+#else
 		for (i = 0; i < Z_STRLEN_P(shorter); i++) {
 			ZSTR_VAL(str)[i] = Z_STRVAL_P(shorter)[i] ^ Z_STRVAL_P(longer)[i];
 		}
 		ZSTR_VAL(str)[i] = 0;
+#endif
 		if (result==op1) {
 			zval_ptr_dtor_str(result);
 		}
@@ -3009,6 +3027,7 @@ ZEND_API void zend_reset_lc_ctype_locale(void)
 	}
 }
 
+#ifndef HAVE_PHP_OXIDIZED
 static zend_always_inline void zend_str_tolower_impl(char *dest, const char *str, size_t length) /* {{{ */ {
 	unsigned char *p = (unsigned char*)str;
 	unsigned char *q = (unsigned char*)dest;
@@ -3052,6 +3071,17 @@ static zend_always_inline void zend_str_toupper_impl(char *dest, const char *str
 	}
 }
 /* }}} */
+#else
+static zend_always_inline void zend_str_tolower_impl(char *dest, const char *str, size_t length) /* {{{ */ {
+	zend_oxidized_str_tolower(str, length, dest);
+}
+/* }}} */
+
+static zend_always_inline void zend_str_toupper_impl(char *dest, const char *str, size_t length) /* {{{ */ {
+	zend_oxidized_str_toupper(str, length, dest);
+}
+/* }}} */
+#endif
 
 ZEND_API char* ZEND_FASTCALL zend_str_tolower_copy(char *dest, const char *source, size_t length) /* {{{ */
 {

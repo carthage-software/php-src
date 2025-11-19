@@ -25,8 +25,8 @@
 #include "zend_multiply.h"
 #include "zend_portability.h"
 
-#ifdef HAVE_ZEND_RUST
-# include "rust/zend_rust.h"
+#ifdef HAVE_PHP_OXIDIZED
+# include "oxidized/php_oxidized.h"
 #endif
 
 #include <float.h>
@@ -1088,8 +1088,8 @@ PHP_FUNCTION(base_convert)
 		RETURN_THROWS();
 	}
 
-#ifdef HAVE_ZEND_RUST
-	BaseConvertResult rust_result = php_rust_base_convert(
+#ifdef HAVE_PHP_OXIDIZED
+	BaseConvertResult rust_result = php_oxidized_base_convert(
 		ZSTR_VAL(number),
 		ZSTR_LEN(number),
 		(int)frombase,

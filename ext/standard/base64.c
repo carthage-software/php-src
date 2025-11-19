@@ -20,8 +20,8 @@
 #include "php.h"
 #include "base64.h"
 
-#ifdef HAVE_ZEND_RUST
-# include "rust/zend_rust.h"
+#ifdef HAVE_PHP_OXIDIZED
+# include "oxidized/php_oxidized.h"
 #endif
 
 /* {{{ base64 tables */
@@ -1242,9 +1242,9 @@ PHP_FUNCTION(base64_encode)
 		Z_PARAM_STRING(str, str_len)
 	ZEND_PARSE_PARAMETERS_END();
 
-#ifdef HAVE_ZEND_RUST
+#ifdef HAVE_PHP_OXIDIZED
 	size_t output_len;
-	char *encoded = php_rust_base64_encode((unsigned char*)str, str_len, &output_len, 0);
+	char *encoded = php_oxidized_base64_encode((unsigned char*)str, str_len, &output_len, 0);
 	if (UNEXPECTED(encoded == NULL)) {
 		zend_error_noreturn(E_ERROR, "base64_encode: memory allocation failed");
 	}
@@ -1272,9 +1272,9 @@ PHP_FUNCTION(base64_decode)
 		Z_PARAM_BOOL(strict)
 	ZEND_PARSE_PARAMETERS_END();
 
-#ifdef HAVE_ZEND_RUST
+#ifdef HAVE_PHP_OXIDIZED
 	size_t output_len;
-	char *decoded = php_rust_base64_decode((unsigned char*)str, str_len, &output_len, strict ? 1 : 0);
+	char *decoded = php_oxidized_base64_decode((unsigned char*)str, str_len, &output_len, strict ? 1 : 0);
 	if (decoded == NULL) {
 		RETURN_FALSE;
 	}

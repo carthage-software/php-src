@@ -818,12 +818,12 @@ PHPAPI ZEND_COLD void php_print_info(int flag)
 		php_info_print_table_row(2, "Configure Command", CONFIGURE_COMMAND );
 #endif
 
-#ifdef HAVE_ZEND_RUST
-		php_info_print_table_row(2, "Zend Rust Components", "enabled");
-#ifdef ZEND_RUST_VERSION
-		php_info_print_table_row(2, "Rust Compiler", ZEND_RUST_VERSION);
+#ifdef HAVE_PHP_OXIDIZED
+		php_info_print_table_row(2, "PHP Oxidized Components", "enabled");
+#ifdef PHP_OXIDIZED_VERSION
+		php_info_print_table_row(2, "Rust Compiler", PHP_OXIDIZED_VERSION);
 #endif
-		php_info_print_table_row(2, "Zend Rust Library", "v0.1.0");
+		php_info_print_table_row(2, "PHP Oxidized Library", "v0.1.0");
 #endif
 
 		if (sapi_module.pretty_name) {

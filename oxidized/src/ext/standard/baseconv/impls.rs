@@ -34,7 +34,7 @@ pub struct Result {
 }
 
 pub fn convert(input: &[u8], from_base: u32, to_base: u32) -> Option<Result> {
-    if from_base < 2 || from_base > 36 || to_base < 2 || to_base > 36 {
+    if !(2..=36).contains(&from_base) || !(2..=36).contains(&to_base) {
         return None;
     }
 
@@ -135,18 +135,16 @@ fn parse_with_mode_switch(data: &[u8], from_base: u32) -> (i64, f64, bool, bool)
 
         if mode_float {
             val_f64 = val_f64.mul_add(from_base as f64, digit as f64);
+        } else if val_i64 > safe_mul_limit {
+            mode_float = true;
+            val_f64 = (val_i64 as f64).mul_add(from_base as f64, digit as f64);
         } else {
-            if val_i64 > safe_mul_limit {
+            let next_val = val_i64 * base_i64;
+            if next_val > i64::MAX - (digit as i64) {
                 mode_float = true;
-                val_f64 = (val_i64 as f64).mul_add(from_base as f64, digit as f64);
+                val_f64 = (next_val as f64) + (digit as f64);
             } else {
-                let next_val = val_i64 * base_i64;
-                if next_val > i64::MAX - (digit as i64) {
-                    mode_float = true;
-                    val_f64 = (next_val as f64) + (digit as f64);
-                } else {
-                    val_i64 = next_val + (digit as i64);
-                }
+                val_i64 = next_val + (digit as i64);
             }
         }
     }

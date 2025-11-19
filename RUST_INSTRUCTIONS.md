@@ -1,21 +1,21 @@
-# Rust Integration - Build Instructions
+# PHP Oxidized - Build Instructions
 
-Proof of concept: Rust implementations for Zend Memory Management (`zend_strndup`, `malloc`, `free`, `realloc`) and base functions (`base64_encode`, `base64_decode`, `base_convert`).
+PHP Oxidized provides Rust implementations for performance-critical PHP components including memory management, string operations, hash tables, and standard library functions.
 
 ## Prerequisites
 
 - Rust toolchain (rustc, cargo)
 - cbindgen (optional): `cargo install cbindgen`
 
-## Build with Rust
+## Build with PHP Oxidized
 
 ```bash
 ./buildconf --force
-./configure --enable-zend-rust
+./configure --enable-php-oxidized
 make -j$(nproc)
 ```
 
-## Build without Rust
+## Build without PHP Oxidized
 
 ```bash
 ./buildconf --force
@@ -26,18 +26,18 @@ make -j$(nproc)
 ## Verify
 
 ```bash
-# Check if Rust is enabled
-./sapi/cli/php -i | grep -i rust
+# Check if PHP Oxidized is enabled
+./sapi/cli/php -i | grep -i oxidized
 
 # Or check config header
-grep HAVE_ZEND_RUST main/php_config.h
+grep HAVE_PHP_OXIDIZED main/php_config.h
 ```
 
 ## Test
 
 ```bash
 # Run Rust tests
-cd Zend/rust && cargo test
+cd oxidized && cargo test
 
 # Run PHP tests
 make test

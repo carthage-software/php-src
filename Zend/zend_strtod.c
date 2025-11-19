@@ -190,6 +190,9 @@
 #include <zend_strtod.h>
 #include "zend_strtod_int.h"
 #include "zend_globals.h"
+#ifdef HAVE_PHP_OXIDIZED
+#include "oxidized/php_oxidized.h"
+#endif
 
 #ifndef Long
 #define Long int32_t
@@ -2521,6 +2524,15 @@ zend_strtod
 	(const char *s00, const char **se)
 #endif
 {
+#ifdef HAVE_PHP_OXIDIZED
+	size_t len = strlen(s00);
+	const char *endptr;
+	double result = zend_oxidized_strtod(s00, len, &endptr);
+	if (se) {
+		*se = endptr;
+	}
+	return result;
+#else
 	int bb2, bb5, bbe, bd2, bd5, bbbits, bs2, c, e, e1;
 	int esign, i, j, k, nd, nd0, nf, nz, nz0, nz1, sign;
 	CONST char *s, *s0, *s1;
@@ -3592,6 +3604,7 @@ zend_strtod
 	if (se)
 		*se = (char *)s;
 	return sign ? -dval(&rv) : dval(&rv);
+#endif
 	}
 
 #if !defined(MULTIPLE_THREADS) && !defined(dtoa_result)
