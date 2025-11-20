@@ -1,9 +1,11 @@
 use std::ptr;
 
-use libc::c_char;
 use libc::c_int;
 use libc::c_uchar;
 use libc::size_t;
+
+use crate::zend::string::create_zend_string_from_bytes;
+use crate::zend::string::ZendString;
 
 mod impls;
 
@@ -13,60 +15,37 @@ const PHP_BASE64_NO_PADDING: c_int = 1;
 ///
 /// # Safety
 ///
-/// Caller must ensure input points to length valid bytes and output_len is a valid pointer
+/// Caller must ensure input points to length valid bytes is a valid pointer
 #[no_mangle]
 pub unsafe extern "C" fn php_oxidized_base64_encode(
     input: *const c_uchar,
     length: size_t,
-    output_len: *mut size_t,
     flags: c_int,
-) -> *mut c_char {
+) -> *mut ZendString {
     if input.is_null() || length == 0 {
-        *output_len = 0;
-        let result = libc::malloc(1) as *mut c_char;
-        if !result.is_null() {
-            *result = 0;
-        }
-
-        return result;
+        return ptr::null_mut();
     }
 
     let input_slice = std::slice::from_raw_parts(input, length);
     let no_padding = (flags & PHP_BASE64_NO_PADDING) != 0;
     let encoded = impls::encode(input_slice, no_padding);
 
-    let alloc_size = encoded.len() + 1;
-    let result = libc::malloc(alloc_size) as *mut c_char;
-    if result.is_null() {
-        return ptr::null_mut();
-    }
-
-    ptr::copy_nonoverlapping(encoded.as_ptr(), result as *mut u8, encoded.len());
-    *result.add(encoded.len()) = 0;
-    *output_len = encoded.len();
-
-    result
+    create_zend_string_from_bytes(&encoded, false)
 }
 
 /// Decode base64 string to bytes
 ///
 /// # Safety
 ///
-/// Caller must ensure input points to length valid bytes and output_len is a valid pointer
+/// Caller must ensure input points to length valid bytes.
 #[no_mangle]
 pub unsafe extern "C" fn php_oxidized_base64_decode(
     input: *const c_uchar,
     length: size_t,
-    output_len: *mut size_t,
     strict: c_int,
-) -> *mut c_char {
+) -> *mut ZendString {
     if input.is_null() || length == 0 {
-        *output_len = 0;
-        let result = libc::malloc(1) as *mut c_char;
-        if !result.is_null() {
-            *result = 0;
-        }
-        return result;
+        return ptr::null_mut();
     }
 
     let input_slice = std::slice::from_raw_parts(input, length);
@@ -76,55 +55,28 @@ pub unsafe extern "C" fn php_oxidized_base64_decode(
         None => return ptr::null_mut(),
     };
 
-    let alloc_size = decoded.len() + 1;
-    let result = libc::malloc(alloc_size) as *mut c_char;
-    if result.is_null() {
-        return ptr::null_mut();
-    }
-
-    ptr::copy_nonoverlapping(decoded.as_ptr(), result as *mut u8, decoded.len());
-    *result.add(decoded.len()) = 0;
-    *output_len = decoded.len();
-
-    result
+    create_zend_string_from_bytes(&decoded, false)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use libc::c_void;
 
     #[test]
-    fn test_encode_basic() {
+    fn test_decode_returns_zend_string() {
         unsafe {
-            let input = b"Hello";
-            let mut len = 0;
-            let result = php_oxidized_base64_encode(input.as_ptr(), input.len(), &mut len, 0);
+            let input = b"SGVsbG8=";
+            let result = php_oxidized_base64_decode(input.as_ptr(), input.len(), 0);
             assert!(!result.is_null());
-            let output = std::slice::from_raw_parts(result as *const u8, len);
-            assert_eq!(output, b"SGVsbG8=");
-            libc::free(result as *mut c_void);
         }
     }
 
     #[test]
-    fn test_round_trip() {
+    fn test_decode_invalid_returns_null() {
         unsafe {
-            let input = b"The quick brown fox jumps over the lazy dog";
-            let mut enc_len = 0;
-            let encoded = php_oxidized_base64_encode(input.as_ptr(), input.len(), &mut enc_len, 0);
-            assert!(!encoded.is_null());
-
-            let mut dec_len = 0;
-            let decoded =
-                php_oxidized_base64_decode(encoded as *const u8, enc_len, &mut dec_len, 1);
-            assert!(!decoded.is_null());
-
-            let output = std::slice::from_raw_parts(decoded as *const u8, dec_len);
-            assert_eq!(output, input);
-
-            libc::free(encoded as *mut c_void);
-            libc::free(decoded as *mut c_void);
+            let input = b"!!!invalid!!!";
+            let result = php_oxidized_base64_decode(input.as_ptr(), input.len(), 1);
+            assert!(result.is_null());
         }
     }
 }

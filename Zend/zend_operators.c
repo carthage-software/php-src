@@ -1731,11 +1731,10 @@ ZEND_API zend_result ZEND_FASTCALL bitwise_or_function(zval *result, zval *op1, 
 			shorter = op1;
 		}
 
-		str = zend_string_alloc(Z_STRLEN_P(longer), 0);
 #ifdef HAVE_PHP_OXIDIZED
-		zend_oxidized_bitwise_or((unsigned char *)Z_STRVAL_P(op1), Z_STRLEN_P(op1), (unsigned char *)Z_STRVAL_P(op2), Z_STRLEN_P(op2), (unsigned char *)ZSTR_VAL(str));
-		ZSTR_VAL(str)[Z_STRLEN_P(longer)] = '\0';
+		str = zend_oxidized_bitwise_or((unsigned char *)Z_STRVAL_P(op1), Z_STRLEN_P(op1), (unsigned char *)Z_STRVAL_P(op2), Z_STRLEN_P(op2));
 #else
+		str = zend_string_alloc(Z_STRLEN_P(longer), 0);
 		for (i = 0; i < Z_STRLEN_P(shorter); i++) {
 			ZSTR_VAL(str)[i] = Z_STRVAL_P(longer)[i] | Z_STRVAL_P(shorter)[i];
 		}
@@ -1818,11 +1817,10 @@ ZEND_API zend_result ZEND_FASTCALL bitwise_and_function(zval *result, zval *op1,
 			shorter = op1;
 		}
 
-		str = zend_string_alloc(Z_STRLEN_P(shorter), 0);
 #ifdef HAVE_PHP_OXIDIZED
-		zend_oxidized_bitwise_and((unsigned char *)Z_STRVAL_P(op1), Z_STRLEN_P(op1), (unsigned char *)Z_STRVAL_P(op2), Z_STRLEN_P(op2), (unsigned char *)ZSTR_VAL(str));
-		ZSTR_VAL(str)[Z_STRLEN_P(shorter)] = '\0';
+		str = zend_oxidized_bitwise_and((unsigned char *)Z_STRVAL_P(op1), Z_STRLEN_P(op1), (unsigned char *)Z_STRVAL_P(op2), Z_STRLEN_P(op2));
 #else
+		str = zend_string_alloc(Z_STRLEN_P(shorter), 0);
 		for (i = 0; i < Z_STRLEN_P(shorter); i++) {
 			ZSTR_VAL(str)[i] = Z_STRVAL_P(shorter)[i] & Z_STRVAL_P(longer)[i];
 		}
@@ -1905,11 +1903,10 @@ ZEND_API zend_result ZEND_FASTCALL bitwise_xor_function(zval *result, zval *op1,
 			shorter = op1;
 		}
 
-		str = zend_string_alloc(Z_STRLEN_P(shorter), 0);
 #ifdef HAVE_PHP_OXIDIZED
-		zend_oxidized_bitwise_xor((unsigned char *)Z_STRVAL_P(op1), Z_STRLEN_P(op1), (unsigned char *)Z_STRVAL_P(op2), Z_STRLEN_P(op2), (unsigned char *)ZSTR_VAL(str));
-		ZSTR_VAL(str)[Z_STRLEN_P(shorter)] = '\0';
+		str = zend_oxidized_bitwise_xor((unsigned char *)Z_STRVAL_P(op1), Z_STRLEN_P(op1), (unsigned char *)Z_STRVAL_P(op2), Z_STRLEN_P(op2));
 #else
+		str = zend_string_alloc(Z_STRLEN_P(shorter), 0);
 		for (i = 0; i < Z_STRLEN_P(shorter); i++) {
 			ZSTR_VAL(str)[i] = Z_STRVAL_P(shorter)[i] ^ Z_STRVAL_P(longer)[i];
 		}

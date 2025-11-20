@@ -4,6 +4,8 @@ use std::slice;
 use libc::c_char;
 use libc::size_t;
 
+use crate::zend::string::{create_zend_string_from_bytes, ZendString};
+
 mod impls;
 
 /// Convert string to lowercase
@@ -56,17 +58,16 @@ pub unsafe extern "C" fn zend_oxidized_str_toupper(
 ///
 /// # Safety
 ///
-/// Caller must ensure op1 points to len1 bytes, op2 to len2 bytes, result has space for max(len1,len2) bytes
+/// Caller must ensure op1 points to len1 bytes, op2 to len2 bytes.
 #[no_mangle]
 pub unsafe extern "C" fn zend_oxidized_bitwise_or(
     op1: *const c_char,
     len1: size_t,
     op2: *const c_char,
     len2: size_t,
-    result: *mut c_char,
-) -> size_t {
-    if op1.is_null() || op2.is_null() || result.is_null() {
-        return 0;
+) -> *mut ZendString {
+    if op1.is_null() || op2.is_null() {
+        return ptr::null_mut();
     }
 
     let op1_slice = slice::from_raw_parts(op1 as *const u8, len1);
@@ -74,26 +75,23 @@ pub unsafe extern "C" fn zend_oxidized_bitwise_or(
 
     let result_vec = impls::bitwise_or(op1_slice, op2_slice);
 
-    ptr::copy_nonoverlapping(result_vec.as_ptr(), result as *mut u8, result_vec.len());
-
-    result_vec.len()
+    create_zend_string_from_bytes(&result_vec, false)
 }
 
 /// Perform bitwise AND on two byte sequences
 ///
 /// # Safety
 ///
-/// Caller must ensure op1 points to len1 bytes, op2 to len2 bytes, result has space for min(len1,len2) bytes
+/// Caller must ensure op1 points to len1 bytes, op2 to len2 bytes.
 #[no_mangle]
 pub unsafe extern "C" fn zend_oxidized_bitwise_and(
     op1: *const c_char,
     len1: size_t,
     op2: *const c_char,
     len2: size_t,
-    result: *mut c_char,
-) -> size_t {
-    if op1.is_null() || op2.is_null() || result.is_null() {
-        return 0;
+) -> *mut ZendString {
+    if op1.is_null() || op2.is_null() {
+        return ptr::null_mut();
     }
 
     let op1_slice = slice::from_raw_parts(op1 as *const u8, len1);
@@ -101,26 +99,23 @@ pub unsafe extern "C" fn zend_oxidized_bitwise_and(
 
     let result_vec = impls::bitwise_and(op1_slice, op2_slice);
 
-    ptr::copy_nonoverlapping(result_vec.as_ptr(), result as *mut u8, result_vec.len());
-
-    result_vec.len()
+    create_zend_string_from_bytes(&result_vec, false)
 }
 
 /// Perform bitwise XOR on two byte sequences
 ///
 /// # Safety
 ///
-/// Caller must ensure op1 points to len1 bytes, op2 to len2 bytes, result has space for max(len1,len2) bytes
+/// Caller must ensure op1 points to len1 bytes, op2 to len2 bytes.
 #[no_mangle]
 pub unsafe extern "C" fn zend_oxidized_bitwise_xor(
     op1: *const c_char,
     len1: size_t,
     op2: *const c_char,
     len2: size_t,
-    result: *mut c_char,
-) -> size_t {
-    if op1.is_null() || op2.is_null() || result.is_null() {
-        return 0;
+) -> *mut ZendString {
+    if op1.is_null() || op2.is_null() {
+        return ptr::null_mut();
     }
 
     let op1_slice = slice::from_raw_parts(op1 as *const u8, len1);
@@ -128,9 +123,7 @@ pub unsafe extern "C" fn zend_oxidized_bitwise_xor(
 
     let result_vec = impls::bitwise_xor(op1_slice, op2_slice);
 
-    ptr::copy_nonoverlapping(result_vec.as_ptr(), result as *mut u8, result_vec.len());
-
-    result_vec.len()
+    create_zend_string_from_bytes(&result_vec, false)
 }
 
 #[cfg(test)]

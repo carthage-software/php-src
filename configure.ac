@@ -1796,6 +1796,9 @@ Install Rust from https://rustup.rs/ or use your package manager.])
   dnl Add Makefile fragment
   PHP_ADD_MAKEFILE_FRAGMENT([$abs_srcdir/oxidized/Makefile.frag])
 
+  dnl Add C wrapper sources
+  PHP_ADD_SOURCES([Zend/oxidized], [php_oxidized_zend_string.c])
+
   AC_MSG_NOTICE([PHP Oxidized components enabled (profile: $RUST_BUILD_PROFILE)])
 fi
 

@@ -49,6 +49,10 @@
 #include "Zend/zend_bitset.h"
 #endif
 
+#ifdef HAVE_PHP_OXIDIZED
+# include "oxidized/php_oxidized.h"
+#endif
+
 #include "zend_simd.h"
 
 /* this is read-only, so it's ok */
@@ -523,6 +527,17 @@ static inline zend_result php_charmask(const unsigned char *input, size_t len, c
  */
 static zend_always_inline zend_string *php_trim_int(zend_string *str, const char *what, size_t what_len, int mode)
 {
+#ifdef HAVE_PHP_OXIDIZED
+	TrimResult result = php_oxidized_trim(ZSTR_VAL(str), ZSTR_LEN(str), what, what_len, mode);
+
+	if (!result.changed) {
+		return zend_string_copy(str);
+	} else if (result.trimmed_len == 0) {
+		return ZSTR_EMPTY_ALLOC();
+	} else {
+		return zend_string_init(ZSTR_VAL(str) + result.trimmed_start, result.trimmed_len, 0);
+	}
+#else
 	const char *start = ZSTR_VAL(str);
 	const char *end = start + ZSTR_LEN(str);
 	char mask[256];
@@ -604,6 +619,7 @@ static zend_always_inline zend_string *php_trim_int(zend_string *str, const char
 	} else {
 		return zend_string_init(start, end - start, 0);
 	}
+#endif
 }
 /* }}} */
 
@@ -5506,6 +5522,14 @@ PHP_FUNCTION(str_repeat)
 	if (ZSTR_LEN(input_str) == 0 || mult == 0)
 		RETURN_EMPTY_STRING();
 
+#ifdef HAVE_PHP_OXIDIZED
+	result = php_oxidized_str_repeat(ZSTR_VAL(input_str), ZSTR_LEN(input_str), mult);
+	if (UNEXPECTED(result == NULL)) {
+		zend_error_noreturn(E_ERROR, "str_repeat: memory allocation failed");
+	}
+	ZSTR_COPY_CONCAT_PROPERTIES(result, input_str);
+	RETURN_STR(result);
+#else
 	/* Initialize the result string */
 	result = zend_string_safe_alloc(ZSTR_LEN(input_str), mult, 0, 0);
 	result_len = ZSTR_LEN(input_str) * mult;
@@ -5533,6 +5557,7 @@ PHP_FUNCTION(str_repeat)
 	ZSTR_VAL(result)[result_len] = '\0';
 
 	RETURN_NEW_STR(result);
+#endif
 }
 /* }}} */
 
@@ -5814,6 +5839,14 @@ PHP_FUNCTION(str_pad)
 		RETURN_THROWS();
 	}
 
+#ifdef HAVE_PHP_OXIDIZED
+	result = php_oxidized_str_pad(ZSTR_VAL(input), ZSTR_LEN(input), pad_length,
+	                               pad_str, pad_str_len, pad_type_val);
+	if (UNEXPECTED(result == NULL)) {
+		RETURN_STR_COPY(input);
+	}
+	RETURN_STR(result);
+#else
 	num_pad_chars = pad_length - ZSTR_LEN(input);
 	result = zend_string_safe_alloc(1, ZSTR_LEN(input), num_pad_chars, 0);
 	ZSTR_LEN(result) = 0;
@@ -5853,6 +5886,7 @@ PHP_FUNCTION(str_pad)
 	ZSTR_VAL(result)[ZSTR_LEN(result)] = '\0';
 
 	RETURN_NEW_STR(result);
+#endif
 }
 /* }}} */
 
