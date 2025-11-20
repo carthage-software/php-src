@@ -74,8 +74,7 @@ pub unsafe fn create_zend_string_from_bytes(data: &[u8], persistent: bool) -> *m
 
     ptr::copy_nonoverlapping(data.as_ptr(), val_ptr as *mut u8, len);
 
-    *val_ptr.add(len) = 0;
-
+    *(val_ptr as *mut u8).add(len) = 0;
     s
 }
 

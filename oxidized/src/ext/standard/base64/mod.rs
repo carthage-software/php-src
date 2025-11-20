@@ -22,8 +22,12 @@ pub unsafe extern "C" fn php_oxidized_base64_encode(
     length: size_t,
     flags: c_int,
 ) -> *mut ZendString {
-    if input.is_null() || length == 0 {
+    if input.is_null() {
         return ptr::null_mut();
+    }
+
+    if length == 0 {
+        return create_zend_string_from_bytes(&[], false);
     }
 
     let input_slice = std::slice::from_raw_parts(input, length);
@@ -44,8 +48,12 @@ pub unsafe extern "C" fn php_oxidized_base64_decode(
     length: size_t,
     strict: c_int,
 ) -> *mut ZendString {
-    if input.is_null() || length == 0 {
+    if input.is_null() {
         return ptr::null_mut();
+    }
+
+    if length == 0 {
+        return create_zend_string_from_bytes(&[], false);
     }
 
     let input_slice = std::slice::from_raw_parts(input, length);

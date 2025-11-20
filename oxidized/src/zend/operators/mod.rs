@@ -70,6 +70,10 @@ pub unsafe extern "C" fn zend_oxidized_bitwise_or(
         return ptr::null_mut();
     }
 
+    if len1 == 0 && len2 == 0 {
+        return create_zend_string_from_bytes(&[], false);
+    }
+
     let op1_slice = slice::from_raw_parts(op1 as *const u8, len1);
     let op2_slice = slice::from_raw_parts(op2 as *const u8, len2);
 

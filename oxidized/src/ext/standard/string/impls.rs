@@ -3,28 +3,29 @@ pub fn str_repeat(input: &[u8], mult: usize) -> Vec<u8> {
         return Vec::new();
     }
 
-    let result_len = input.len() * mult;
-
     if input.len() == 1 {
-        return vec![input[0]; result_len];
+        return vec![input[0]; mult];
     }
 
-    let mut result = Vec::with_capacity(result_len);
+    if mult == 1 {
+        return input.to_vec();
+    }
+
+    if mult == 2 {
+        let mut result = Vec::with_capacity(input.len() * 2);
+        result.extend_from_slice(input);
+        result.extend_from_slice(input);
+        return result;
+    }
+
+    let mut result = Vec::with_capacity(input.len() * mult);
     result.extend_from_slice(input);
 
-    let mut copied = input.len();
-    while copied < result_len {
-        let to_copy = copied.min(result_len - copied);
-
-        // Safety: We ensure that we do not write beyond the allocated capacity of `result`.
-        unsafe {
-            let src = result.as_ptr();
-            let dst = result.as_mut_ptr().add(copied);
-            std::ptr::copy_nonoverlapping(src, dst, to_copy);
-            result.set_len(copied + to_copy);
-        }
-
-        copied += to_copy;
+    while result.len() < input.len() * mult {
+        let current_len = result.len();
+        let remaining = input.len() * mult - current_len;
+        let to_copy = current_len.min(remaining);
+        result.extend_from_within(0..to_copy);
     }
 
     result
@@ -154,21 +155,22 @@ pub fn str_pad(input: &[u8], pad_length: usize, pad_str: &[u8], pad_type: i32) -
     };
 
     if left_pad > 0 {
-        fill_padding(&mut result, left_pad, pad_str);
+        fill_padding_safe(&mut result, left_pad, pad_str);
     }
 
     result.extend_from_slice(input);
 
     if right_pad > 0 {
-        fill_padding(&mut result, right_pad, pad_str);
+        fill_padding_safe(&mut result, right_pad, pad_str);
     }
 
     result
 }
 
-fn fill_padding(result: &mut Vec<u8>, pad_chars: usize, pad_str: &[u8]) {
+#[inline(always)]
+fn fill_padding_safe(dst: &mut Vec<u8>, pad_chars: usize, pad_str: &[u8]) {
     if pad_str.len() == 1 {
-        result.resize(result.len() + pad_chars, pad_str[0]);
+        dst.extend(std::iter::repeat_n(pad_str[0], pad_chars));
         return;
     }
 
@@ -176,11 +178,11 @@ fn fill_padding(result: &mut Vec<u8>, pad_chars: usize, pad_str: &[u8]) {
     let remaining = pad_chars % pad_str.len();
 
     for _ in 0..full_repeats {
-        result.extend_from_slice(pad_str);
+        dst.extend_from_slice(pad_str);
     }
 
     if remaining > 0 {
-        result.extend_from_slice(&pad_str[..remaining]);
+        dst.extend_from_slice(&pad_str[..remaining]);
     }
 }
 
