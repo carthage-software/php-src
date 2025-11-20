@@ -34,6 +34,7 @@ unsafe fn zend_oxidized_str_val(s: *mut ZendString) -> *mut c_char {
 }
 
 #[cfg(test)]
+#[allow(static_mut_refs)] // I know what I'm doing, i think, not sure
 unsafe fn zend_oxidized_get_empty_string() -> *mut ZendString {
     static mut EMPTY: [u8; 64] = [0; 64];
     EMPTY.as_mut_ptr() as *mut ZendString
