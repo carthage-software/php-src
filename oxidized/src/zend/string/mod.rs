@@ -2,7 +2,6 @@ use std::ptr;
 
 use libc::c_char;
 use libc::c_int;
-use libc::c_void;
 use libc::size_t;
 
 /// Opaque type representing a zend_string
@@ -16,41 +15,28 @@ pub struct ZendString {
 #[allow(dead_code)]
 const ZEND_MM_ALIGNMENT: usize = 8;
 
-// FFI bindings to C wrapper functions
-#[allow(dead_code)]
+#[cfg(not(test))]
 extern "C" {
-    /// Allocate memory (wrapper for pemalloc)
-    fn zend_oxidized_pemalloc(size: size_t, persistent: c_int) -> *mut c_void;
-
-    /// Free memory (wrapper for pefree)
-    fn zend_oxidized_pefree(ptr: *mut c_void, persistent: c_int);
-
-    /// Allocate a zend_string (wrapper for zend_string_alloc)
     fn zend_oxidized_string_alloc(len: size_t, persistent: c_int) -> *mut ZendString;
-
-    /// Release a zend_string (wrapper for zend_string_release_ex)
-    fn zend_oxidized_string_release_ex(s: *mut ZendString, persistent: c_int);
-
-    /// Get pointer to string data (wrapper for ZSTR_VAL)
     fn zend_oxidized_str_val(s: *mut ZendString) -> *mut c_char;
-
-    /// Get string length (wrapper for ZSTR_LEN)
-    fn zend_oxidized_str_len(s: *const ZendString) -> size_t;
-
-    /// Set string length
-    fn zend_oxidized_set_len(s: *mut ZendString, len: size_t);
-
-    /// Set hash value
-    fn zend_oxidized_set_hash(s: *mut ZendString, hash: u64);
-
-    /// Set reference count
-    fn zend_oxidized_set_refcount(s: *mut ZendString, refcount: u32);
-
-    /// Set GC type info
-    fn zend_oxidized_set_type_info(s: *mut ZendString, type_info: u32);
-
-    /// Get the global empty string
     fn zend_oxidized_get_empty_string() -> *mut ZendString;
+}
+
+#[cfg(test)]
+unsafe fn zend_oxidized_string_alloc(len: size_t, _persistent: c_int) -> *mut ZendString {
+    let layout = std::alloc::Layout::from_size_align(len + 64, 8).unwrap();
+    std::alloc::alloc(layout) as *mut ZendString
+}
+
+#[cfg(test)]
+unsafe fn zend_oxidized_str_val(s: *mut ZendString) -> *mut c_char {
+    (s as *mut u8).add(32) as *mut c_char
+}
+
+#[cfg(test)]
+unsafe fn zend_oxidized_get_empty_string() -> *mut ZendString {
+    static mut EMPTY: [u8; 64] = [0; 64];
+    EMPTY.as_mut_ptr() as *mut ZendString
 }
 
 /// Create a zend_string from a byte slice using zero-copy pattern
@@ -108,7 +94,6 @@ mod tests {
 
     #[test]
     fn test_zend_string_opaque_type() {
-        // ZendString should be zero-sized (opaque)
         assert_eq!(std::mem::size_of::<ZendString>(), 0);
     }
 }

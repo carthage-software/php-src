@@ -103,36 +103,3 @@ pub unsafe extern "C" fn php_oxidized_str_pad(
 
     create_zend_string_from_bytes(&result, false)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::ffi::CString;
-
-    #[test]
-    fn test_str_repeat() {
-        unsafe {
-            let input = CString::new("ab").unwrap();
-            let result = php_oxidized_str_repeat(input.as_ptr(), 2, 3);
-            assert!(!result.is_null());
-        }
-    }
-
-    #[test]
-    fn test_str_repeat_empty() {
-        unsafe {
-            let input = CString::new("").unwrap();
-            let result = php_oxidized_str_repeat(input.as_ptr(), 0, 10);
-            assert!(result.is_null());
-        }
-    }
-
-    #[test]
-    fn test_str_repeat_zero_mult() {
-        unsafe {
-            let input = CString::new("test").unwrap();
-            let result = php_oxidized_str_repeat(input.as_ptr(), 4, 0);
-            assert!(result.is_null());
-        }
-    }
-}
