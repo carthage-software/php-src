@@ -237,6 +237,16 @@ struct _zend_class_entry {
 	} info;
 };
 
+typedef struct _zend_type_alias {
+	char type;
+	zend_string *name;
+	zend_type resolved_type;
+	uint32_t flags;
+	zend_string *filename;
+	uint32_t line_start;
+	uint32_t line_end;
+} zend_type_alias;
+
 typedef union {
 	zend_max_align_t align;
 	uint64_t opaque[5];

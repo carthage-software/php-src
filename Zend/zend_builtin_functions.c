@@ -1189,6 +1189,47 @@ ZEND_FUNCTION(enum_exists)
 	class_exists_impl(INTERNAL_FUNCTION_PARAM_PASSTHRU, ZEND_ACC_ENUM, 0);
 }
 
+/* {{{ Checks if the type alias exists */
+ZEND_FUNCTION(type_alias_exists)
+{
+	zend_string *name;
+	zend_string *lcname;
+	bool autoload = true;
+	void *ptr;
+
+	ZEND_PARSE_PARAMETERS_START(1, 2)
+		Z_PARAM_STR(name)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_BOOL(autoload)
+	ZEND_PARSE_PARAMETERS_END();
+
+	if (ZSTR_VAL(name)[0] == '\\') {
+		lcname = zend_string_alloc(ZSTR_LEN(name) - 1, 0);
+		zend_str_tolower_copy(ZSTR_VAL(lcname), ZSTR_VAL(name) + 1, ZSTR_LEN(name) - 1);
+	} else {
+		lcname = zend_string_tolower(name);
+	}
+
+	ptr = zend_hash_find_ptr(EG(class_table), lcname);
+	if (ptr && ((zend_type_alias *)ptr)->type == ZEND_TYPE_ALIAS) {
+		zend_string_release_ex(lcname, 0);
+		RETURN_TRUE;
+	}
+
+	if (autoload && !ptr) {
+		(void)zend_lookup_class(name); 
+		ptr = zend_hash_find_ptr(EG(class_table), lcname);
+		if (ptr && ((zend_type_alias *)ptr)->type == ZEND_TYPE_ALIAS) {
+			zend_string_release_ex(lcname, 0);
+			RETURN_TRUE;
+		}
+	}
+
+	zend_string_release_ex(lcname, 0);
+	RETURN_FALSE;
+}
+/* }}} */
+
 /* {{{ Checks if the function exists */
 ZEND_FUNCTION(function_exists)
 {

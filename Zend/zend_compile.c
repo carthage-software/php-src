@@ -7253,6 +7253,21 @@ static zend_type zend_compile_single_typename(zend_ast *ast)
 			}
 
 			class_name = zend_new_interned_string(class_name);
+
+			if (fetch_type == ZEND_FETCH_CLASS_DEFAULT) {
+				zend_string *lc_name = zend_string_tolower(class_name);
+				zval *zv = zend_hash_find(CG(class_table), lc_name);
+				zend_string_release(lc_name);
+				if (zv) {
+					void *ptr = Z_PTR_P(zv);
+					if (((zend_type_alias *)ptr)->type == ZEND_TYPE_ALIAS) {
+						zend_type_alias *alias = (zend_type_alias *)ptr;
+						zend_string_release(class_name);
+						return alias->resolved_type;
+					}
+				}
+			}
+
 			zend_alloc_ce_cache(class_name);
 			return (zend_type) ZEND_TYPE_INIT_CLASS(class_name, /* allow null */ false, 0);
 		}
@@ -9765,6 +9780,66 @@ static void zend_compile_group_use(const zend_ast *ast) /* {{{ */
 }
 /* }}} */
 
+static void zend_compile_type_alias_decl(zend_ast *ast) /* {{{ */
+{
+	zend_ast *name_ast = ast->child[0];
+	zend_ast *type_ast = ast->child[1];
+	zend_string *unqualified_name = zend_ast_get_str(name_ast);
+	zend_string *name, *lcname;
+	zend_type_alias *alias;
+	zend_type resolved_type;
+
+	/* can be improved? idk */
+	if (zend_string_equals_literal_ci(unqualified_name, "self")
+		|| zend_string_equals_literal_ci(unqualified_name, "parent")
+		|| zend_string_equals_literal_ci(unqualified_name, "static")
+		|| zend_string_equals_literal_ci(unqualified_name, "true")
+		|| zend_string_equals_literal_ci(unqualified_name, "false")
+		|| zend_string_equals_literal_ci(unqualified_name, "null")) {
+		zend_error_noreturn(E_COMPILE_ERROR,
+			"Cannot use '%s' as type alias name as it is reserved", ZSTR_VAL(unqualified_name));
+	}
+
+	name = zend_prefix_with_ns(unqualified_name);
+	name = zend_new_interned_string(name);
+	lcname = zend_string_tolower(name);
+
+	if (FC(imports)) {
+		zend_string *import_name = zend_hash_find_ptr_lc(FC(imports), unqualified_name);
+		if (import_name && !zend_string_equals_ci(lcname, import_name)) {
+			zend_error_noreturn(E_COMPILE_ERROR,
+				"Cannot declare type alias %s because the name is already in use", ZSTR_VAL(name));
+		}
+	}
+
+	if (zend_hash_exists(CG(class_table), lcname)) {
+		zend_error_noreturn(E_COMPILE_ERROR,
+			"Cannot redeclare %s (already defined)", ZSTR_VAL(name));
+	}
+
+	resolved_type = zend_compile_typename(type_ast);
+
+	alias = zend_arena_alloc(&CG(arena), sizeof(zend_type_alias));
+	memset(alias, 0, sizeof(zend_type_alias));
+
+	alias->type = ZEND_TYPE_ALIAS;
+	alias->name = zend_string_copy(name);
+	alias->resolved_type = resolved_type;
+	alias->filename = zend_string_copy(zend_get_compiled_filename());
+	alias->line_start = ast->lineno;
+	alias->line_end = CG(zend_lineno);
+
+	if (EXPECTED(zend_hash_add_ptr(CG(class_table), lcname, alias) != NULL)) {
+		zend_string_release(lcname);
+		zend_register_seen_symbol(name, ZEND_SYMBOL_CLASS);
+		return;
+	}
+
+	zend_error_noreturn(E_COMPILE_ERROR,
+		"Cannot redeclare %s (already defined)", ZSTR_VAL(name));
+}
+/* }}} */
+
 static void zend_compile_const_decl(zend_ast *ast) /* {{{ */
 {
 	zend_ast_list *list = zend_ast_get_list(ast);
@@ -11875,6 +11950,9 @@ static void zend_compile_stmt(zend_ast *ast) /* {{{ */
 			break;
 		case ZEND_AST_CONST_DECL:
 			zend_compile_const_decl(ast);
+			break;
+		case ZEND_AST_TYPE_ALIAS:
+			zend_compile_type_alias_decl(ast);
 			break;
 		case ZEND_AST_NAMESPACE:
 			zend_compile_namespace(ast);

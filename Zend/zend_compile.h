@@ -1084,6 +1084,7 @@ ZEND_API zend_string *zend_type_to_string(zend_type type);
 
 #define ZEND_INTERNAL_CLASS         1
 #define ZEND_USER_CLASS             2
+#define ZEND_TYPE_ALIAS             3
 
 #define ZEND_EVAL				(1<<0)
 #define ZEND_INCLUDE			(1<<1)
@@ -1228,6 +1229,7 @@ static zend_always_inline bool zend_check_arg_send_type(const zend_function *zf,
 #define ZEND_SYMBOL_CLASS    (1<<0)
 #define ZEND_SYMBOL_FUNCTION (1<<1)
 #define ZEND_SYMBOL_CONST    (1<<2)
+#define ZEND_SYMBOL_TYPE     (1<<3)
 
 /* All increment opcodes are even (decrement are odd) */
 #define ZEND_IS_INCREMENT(opcode) (((opcode) & 1) == 0)

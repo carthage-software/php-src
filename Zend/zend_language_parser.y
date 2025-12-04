@@ -168,6 +168,7 @@ static YYSIZE_T zend_yytnamerr(char*, const char*);
 %token <ident> T_TRAIT         "'trait'"
 %token <ident> T_INTERFACE     "'interface'"
 %token <ident> T_ENUM          "'enum'"
+%token <ident> T_TYPE          "'type'"
 %token <ident> T_EXTENDS       "'extends'"
 %token <ident> T_IMPLEMENTS    "'implements'"
 %token <ident> T_NAMESPACE     "'namespace'"
@@ -285,13 +286,14 @@ static YYSIZE_T zend_yytnamerr(char*, const char*);
 %type <ast> attribute_decl attribute attributes attribute_group namespace_declaration_name
 %type <ast> match match_arm_list non_empty_match_arm_list match_arm match_arm_cond_list
 %type <ast> enum_declaration_statement enum_backing_type enum_case enum_case_expr
+%type <ast> type_alias_declaration_statement
 %type <ast> function_name non_empty_member_modifiers
 %type <ast> property_hook property_hook_list optional_property_hook_list hooked_property property_hook_body
 %type <ast> optional_parameter_list clone_argument_list non_empty_clone_argument_list
 
 %type <num> returns_ref function fn is_reference is_variadic property_modifiers property_hook_modifiers
 %type <num> method_modifiers class_const_modifiers member_modifier optional_cpp_modifiers
-%type <num> class_modifiers class_modifier anonymous_class_modifiers anonymous_class_modifiers_optional use_type backup_fn_flags
+%type <num> class_modifiers class_modifier anonymous_class_modifiers anonymous_class_modifiers_optional use_type inline_use_type backup_fn_flags
 
 %type <ptr> backup_lex_pos
 %type <str> backup_doc_comment
@@ -398,6 +400,7 @@ attributed_statement:
 attributed_top_statement:
 		attributed_statement				{ $$ = $1; }
 	|	T_CONST const_list ';'				{ $$ = $2; }
+	|	type_alias_declaration_statement	{ $$ = $1; }
 ;
 
 top_statement:
@@ -424,6 +427,12 @@ top_statement:
 ;
 
 use_type:
+	 	T_FUNCTION 		{ $$ = ZEND_SYMBOL_FUNCTION; }
+	| 	T_CONST 		{ $$ = ZEND_SYMBOL_CONST; }
+	|	T_TYPE			{ $$ = ZEND_SYMBOL_TYPE; }
+;
+
+inline_use_type:
 	 	T_FUNCTION 		{ $$ = ZEND_SYMBOL_FUNCTION; }
 	| 	T_CONST 		{ $$ = ZEND_SYMBOL_CONST; }
 ;
@@ -466,7 +475,7 @@ use_declarations:
 
 inline_use_declaration:
 		unprefixed_use_declaration { $$ = $1; $$->attr = ZEND_SYMBOL_CLASS; }
-	|	use_type unprefixed_use_declaration { $$ = $2; $$->attr = $1; }
+	|	inline_use_type unprefixed_use_declaration { $$ = $2; $$->attr = $1; }
 ;
 
 unprefixed_use_declaration:
@@ -665,6 +674,11 @@ enum_case:
 enum_case_expr:
 		%empty	{ $$ = NULL; }
 	|	'=' expr { $$ = $2; }
+;
+
+type_alias_declaration_statement:
+		T_TYPE T_STRING '=' type_expr ';'
+			{ $$ = zend_ast_create(ZEND_AST_TYPE_ALIAS, $2, $4); }
 ;
 
 extends_from:

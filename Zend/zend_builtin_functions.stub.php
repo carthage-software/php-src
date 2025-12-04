@@ -94,6 +94,8 @@ function trait_exists(string $trait, bool $autoload = true): bool {}
 
 function enum_exists(string $enum, bool $autoload = true): bool {}
 
+function type_alias_exists(string $type_alias, bool $autoload = true): bool {}
+
 function function_exists(string $function): bool {}
 
 function class_alias(string $class, string $alias, bool $autoload = true): bool {}

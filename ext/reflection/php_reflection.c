@@ -102,6 +102,7 @@ PHPAPI zend_class_entry *reflection_attribute_ptr;
 PHPAPI zend_class_entry *reflection_enum_ptr;
 PHPAPI zend_class_entry *reflection_enum_unit_case_ptr;
 PHPAPI zend_class_entry *reflection_enum_backed_case_ptr;
+PHPAPI zend_class_entry *reflection_type_alias_ptr;
 PHPAPI zend_class_entry *reflection_fiber_ptr;
 PHPAPI zend_class_entry *reflection_constant_ptr;
 PHPAPI zend_class_entry *reflection_property_hook_type_ptr;
@@ -168,7 +169,8 @@ typedef enum {
 	REF_TYPE_TYPE,
 	REF_TYPE_PROPERTY,
 	REF_TYPE_CLASS_CONSTANT,
-	REF_TYPE_ATTRIBUTE
+	REF_TYPE_ATTRIBUTE,
+	REF_TYPE_TYPE_ALIAS
 } reflection_type_t;
 
 /* Struct for reflection objects */
@@ -273,6 +275,7 @@ static void reflection_free_objects_storage(zend_object *object) /* {{{ */
 		case REF_TYPE_GENERATOR:
 		case REF_TYPE_FIBER:
 		case REF_TYPE_CLASS_CONSTANT:
+		case REF_TYPE_TYPE_ALIAS:
 		case REF_TYPE_OTHER:
 			break;
 		}
@@ -7553,6 +7556,197 @@ ZEND_METHOD(ReflectionEnumBackedCase, getBackingValue)
 	ZVAL_COPY_OR_DUP(return_value, member_p);
 }
 
+/* {{{ ReflectionTypeAlias implementation */
+
+/* Helper to fetch type alias by name */
+static zend_type_alias *reflection_type_alias_fetch(zend_string *name)
+{
+	zend_string *lc_name;
+
+	if (ZSTR_VAL(name)[0] == '\\') {
+		lc_name = zend_string_alloc(ZSTR_LEN(name) - 1, 0);
+		zend_str_tolower_copy(ZSTR_VAL(lc_name), ZSTR_VAL(name) + 1, ZSTR_LEN(name) - 1);
+	} else {
+		lc_name = zend_string_tolower(name);
+	}
+
+	/* First check without autoloading */
+	void *ptr = zend_hash_find_ptr(EG(class_table), lc_name);
+	if (ptr && ((zend_type_alias *)ptr)->type == ZEND_TYPE_ALIAS) {
+		zend_string_release_ex(lc_name, 0);
+		return (zend_type_alias *)ptr;
+	}
+
+	/* Try autoloading */
+	zend_lookup_class(name);
+	ptr = zend_hash_find_ptr(EG(class_table), lc_name);
+	zend_string_release_ex(lc_name, 0);
+
+	if (ptr && ((zend_type_alias *)ptr)->type == ZEND_TYPE_ALIAS) {
+		return (zend_type_alias *)ptr;
+	}
+
+	return NULL;
+}
+
+/* {{{ Preventing __clone from being called */
+ZEND_METHOD(ReflectionTypeAlias, __clone)
+{
+	/* __clone() is private but this is reachable with reflection */
+	_DO_THROW("Cannot clone object using __clone()");
+}
+/* }}} */
+
+ZEND_METHOD(ReflectionTypeAlias, __construct)
+{
+	zend_string *name;
+	zend_type_alias *alias;
+	reflection_object *intern;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_STR(name)
+	ZEND_PARSE_PARAMETERS_END();
+
+	alias = reflection_type_alias_fetch(name);
+	if (!alias) {
+		zend_throw_exception_ex(reflection_exception_ptr, -1,
+			"Type alias \"%s\" does not exist", ZSTR_VAL(name));
+		RETURN_THROWS();
+	}
+
+	intern = Z_REFLECTION_P(ZEND_THIS);
+	intern->ptr = alias;
+	intern->ref_type = REF_TYPE_TYPE_ALIAS;
+
+	/* Set name property */
+	ZVAL_STR_COPY(reflection_prop_name(ZEND_THIS), alias->name);
+}
+
+ZEND_METHOD(ReflectionTypeAlias, __toString)
+{
+	reflection_object *intern;
+	zend_type_alias *alias;
+	smart_str str = {0};
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(alias);
+
+	smart_str_appends(&str, "Type alias [ ");
+	smart_str_append(&str, alias->name);
+	smart_str_appends(&str, " ] {\n}\n");
+	smart_str_0(&str);
+
+	RETURN_STR(smart_str_extract(&str));
+}
+
+ZEND_METHOD(ReflectionTypeAlias, getName)
+{
+	reflection_object *intern;
+	zend_type_alias *alias;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(alias);
+
+	RETURN_STR_COPY(alias->name);
+}
+
+ZEND_METHOD(ReflectionTypeAlias, getShortName)
+{
+	reflection_object *intern;
+	zend_type_alias *alias;
+	const char *backslash;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(alias);
+
+	backslash = zend_memrchr(ZSTR_VAL(alias->name), '\\', ZSTR_LEN(alias->name));
+	if (backslash) {
+		RETURN_STRINGL(backslash + 1, ZSTR_LEN(alias->name) - (backslash - ZSTR_VAL(alias->name) + 1));
+	}
+	RETURN_STR_COPY(alias->name);
+}
+
+ZEND_METHOD(ReflectionTypeAlias, getNamespaceName)
+{
+	reflection_object *intern;
+	zend_type_alias *alias;
+	const char *backslash;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(alias);
+
+	backslash = zend_memrchr(ZSTR_VAL(alias->name), '\\', ZSTR_LEN(alias->name));
+	if (backslash) {
+		RETURN_STRINGL(ZSTR_VAL(alias->name), backslash - ZSTR_VAL(alias->name));
+	}
+	RETURN_EMPTY_STRING();
+}
+
+ZEND_METHOD(ReflectionTypeAlias, inNamespace)
+{
+	reflection_object *intern;
+	zend_type_alias *alias;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(alias);
+
+	RETURN_BOOL(zend_memrchr(ZSTR_VAL(alias->name), '\\', ZSTR_LEN(alias->name)) != NULL);
+}
+
+ZEND_METHOD(ReflectionTypeAlias, getType)
+{
+	reflection_object *intern;
+	zend_type_alias *alias;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(alias);
+
+	reflection_type_factory(alias->resolved_type, return_value, false);
+}
+
+ZEND_METHOD(ReflectionTypeAlias, getFileName)
+{
+	reflection_object *intern;
+	zend_type_alias *alias;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(alias);
+
+	if (alias->filename) {
+		RETURN_STR_COPY(alias->filename);
+	}
+	RETURN_FALSE;
+}
+
+ZEND_METHOD(ReflectionTypeAlias, getStartLine)
+{
+	reflection_object *intern;
+	zend_type_alias *alias;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(alias);
+
+	if (alias->line_start) {
+		RETURN_LONG(alias->line_start);
+	}
+	RETURN_FALSE;
+}
+
+ZEND_METHOD(ReflectionTypeAlias, getEndLine)
+{
+	reflection_object *intern;
+	zend_type_alias *alias;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(alias);
+
+	if (alias->line_end) {
+		RETURN_LONG(alias->line_end);
+	}
+	RETURN_FALSE;
+}
+/* }}} */
+
 /* {{{ proto ReflectionFiber::__construct(Fiber $fiber) */
 ZEND_METHOD(ReflectionFiber, __construct)
 {
@@ -7991,6 +8185,10 @@ PHP_MINIT_FUNCTION(reflection) /* {{{ */
 	reflection_enum_backed_case_ptr = register_class_ReflectionEnumBackedCase(reflection_enum_unit_case_ptr);
 	reflection_enum_backed_case_ptr->create_object = reflection_objects_new;
 	reflection_enum_backed_case_ptr->default_object_handlers = &reflection_object_handlers;
+
+	reflection_type_alias_ptr = register_class_ReflectionTypeAlias(reflector_ptr);
+	reflection_type_alias_ptr->create_object = reflection_objects_new;
+	reflection_type_alias_ptr->default_object_handlers = &reflection_object_handlers;
 
 	reflection_fiber_ptr = register_class_ReflectionFiber();
 	reflection_fiber_ptr->create_object = reflection_objects_new;

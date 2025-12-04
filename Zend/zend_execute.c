@@ -1109,6 +1109,31 @@ static zend_always_inline bool zend_value_instanceof_static(const zval *zv) {
 	return instanceof_function(Z_OBJCE_P(zv), called_scope);
 }
 
+/* Check if a type name is a type alias and return its expanded type */
+static zend_type_alias *zend_fetch_type_alias(zend_string *name)
+{
+	zend_string *lc_name = zend_string_tolower(name);
+	void *ptr = zend_hash_find_ptr(EG(class_table), lc_name);
+	zend_string_release(lc_name);
+
+	if (ptr && ((zend_type_alias *)ptr)->type == ZEND_TYPE_ALIAS) {
+		return (zend_type_alias *)ptr;
+	}
+
+	/* Try autoloading */
+	zend_lookup_class(name);
+
+	lc_name = zend_string_tolower(name);
+	ptr = zend_hash_find_ptr(EG(class_table), lc_name);
+	zend_string_release(lc_name);
+
+	if (ptr && ((zend_type_alias *)ptr)->type == ZEND_TYPE_ALIAS) {
+		return (zend_type_alias *)ptr;
+	}
+
+	return NULL;
+}
+
 static zend_always_inline zend_class_entry *zend_fetch_ce_from_type(
 		const zend_type *type)
 {
@@ -1154,6 +1179,34 @@ static zend_always_inline bool zend_check_type_slow(
 		const zend_type *type, zval *arg, const zend_reference *ref,
 		bool is_return_type, bool is_internal)
 {
+	if (ZEND_TYPE_IS_COMPLEX(*type) && Z_TYPE_P(arg) != IS_OBJECT && !ZEND_TYPE_HAS_LIST(*type)) {
+		if (ZEND_TYPE_HAS_NAME(*type)) {
+			zend_type_alias *alias = zend_fetch_type_alias(ZEND_TYPE_NAME(*type));
+			if (alias) {
+				zend_type expanded = alias->resolved_type;
+				uint32_t expanded_mask = ZEND_TYPE_FULL_MASK(expanded);
+
+				if (ZEND_TYPE_CONTAINS_CODE(expanded, Z_TYPE_P(arg))) {
+					return true;
+				}
+
+				if (ZEND_TYPE_IS_COMPLEX(expanded)) {
+					return zend_check_type_slow(&expanded, arg, ref, is_return_type, is_internal);
+				}
+
+				if (ref && ZEND_REF_HAS_TYPE_SOURCES(ref)) {
+					return false;
+				}
+				if (is_internal && is_return_type) {
+					return false;
+				}
+				return zend_verify_scalar_type_hint(expanded_mask, arg,
+					is_return_type ? ZEND_RET_USES_STRICT_TYPES() : ZEND_ARG_USES_STRICT_TYPES(),
+					is_internal);
+			}
+		}
+	}
+
 	if (ZEND_TYPE_IS_COMPLEX(*type) && EXPECTED(Z_TYPE_P(arg) == IS_OBJECT)) {
 		zend_class_entry *ce;
 		if (UNEXPECTED(ZEND_TYPE_HAS_LIST(*type))) {

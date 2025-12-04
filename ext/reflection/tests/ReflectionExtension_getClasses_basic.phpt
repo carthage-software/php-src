@@ -8,7 +8,7 @@ $ext = new ReflectionExtension('reflection');
 var_dump($ext->getClasses());
 ?>
 --EXPECTF--
-array(26) {
+array(27) {
   ["ReflectionException"]=>
   object(ReflectionClass)#%d (1) {
     ["name"]=>
@@ -123,6 +123,11 @@ array(26) {
   object(ReflectionClass)#%d (1) {
     ["name"]=>
     string(24) "ReflectionEnumBackedCase"
+  }
+  ["ReflectionTypeAlias"]=>
+  object(ReflectionClass)#%d (1) {
+    ["name"]=>
+    string(19) "ReflectionTypeAlias"
   }
   ["ReflectionFiber"]=>
   object(ReflectionClass)#%d (1) {

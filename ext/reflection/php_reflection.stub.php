@@ -884,6 +884,37 @@ class ReflectionEnumBackedCase extends ReflectionEnumUnitCase
     public function getBackingValue(): int|string {}
 }
 
+/**
+ * @strict-properties
+ * @not-serializable
+ */
+class ReflectionTypeAlias implements Reflector
+{
+    public readonly string $name;
+
+    private function __clone(): void {}
+
+    public function __construct(string $name) {}
+
+    public function __toString(): string {}
+
+    public function getName(): string {}
+
+    public function getShortName(): string {}
+
+    public function getNamespaceName(): string {}
+
+    public function inNamespace(): bool {}
+
+    public function getType(): ReflectionType {}
+
+    public function getFileName(): string|false {}
+
+    public function getStartLine(): int|false {}
+
+    public function getEndLine(): int|false {}
+}
+
 /** @not-serializable */
 final class ReflectionFiber
 {
