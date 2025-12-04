@@ -9780,6 +9780,47 @@ static void zend_compile_group_use(const zend_ast *ast) /* {{{ */
 }
 /* }}} */
 
+static bool zend_type_alias_has_cycle(zend_type type, zend_string *alias_lcname) /* {{{ */
+{
+	if (!ZEND_TYPE_IS_COMPLEX(type)) {
+		return false;
+	}
+
+	if (ZEND_TYPE_HAS_LIST(type)) {
+		const zend_type *member;
+		ZEND_TYPE_FOREACH(type, member) {
+			if (zend_type_alias_has_cycle(*member, alias_lcname)) {
+				return true;
+			}
+		} ZEND_TYPE_FOREACH_END();
+		return false;
+	}
+
+	if (ZEND_TYPE_HAS_NAME(type)) {
+		zend_string *name = ZEND_TYPE_NAME(type);
+		zend_string *lcname = zend_string_tolower(name);
+
+		if (zend_string_equals(lcname, alias_lcname)) {
+			zend_string_release(lcname);
+			return true;
+		}
+
+		zval *zv = zend_hash_find(CG(class_table), lcname);
+		zend_string_release(lcname);
+
+		if (zv) {
+			void *ptr = Z_PTR_P(zv);
+			if (((zend_type_alias *)ptr)->type == ZEND_TYPE_ALIAS) {
+				zend_type_alias *alias = (zend_type_alias *)ptr;
+				return zend_type_alias_has_cycle(alias->resolved_type, alias_lcname);
+			}
+		}
+	}
+
+	return false;
+}
+/* }}} */
+
 static void zend_compile_type_alias_decl(zend_ast *ast) /* {{{ */
 {
 	zend_ast *name_ast = ast->child[0];
@@ -9818,6 +9859,12 @@ static void zend_compile_type_alias_decl(zend_ast *ast) /* {{{ */
 	}
 
 	resolved_type = zend_compile_typename(type_ast);
+
+	if (zend_type_alias_has_cycle(resolved_type, lcname)) {
+		zend_string_release(lcname);
+		zend_error_noreturn(E_COMPILE_ERROR,
+			"Type alias %s cannot reference itself, either directly or through other type aliases", ZSTR_VAL(name));
+	}
 
 	alias = zend_arena_alloc(&CG(arena), sizeof(zend_type_alias));
 	memset(alias, 0, sizeof(zend_type_alias));
