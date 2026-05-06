@@ -359,6 +359,14 @@ uint32_t zend_accel_get_class_name_map_ptr(zend_string *type_name)
 }
 
 static void zend_persist_type(zend_type *type) {
+	if (ZEND_TYPE_HAS_TYPE_PARAMETER(*type)) {
+		zend_type_parameter_ref *ref = ZEND_TYPE_TYPE_PARAMETER(*type);
+		ref = zend_shared_memdup_put_free(ref, sizeof(*ref));
+		zend_accel_store_interned_string(ref->name);
+		ZEND_TYPE_SET_PTR(*type, ref);
+		return;
+	}
+
 	if (ZEND_TYPE_HAS_LIST(*type)) {
 		zend_type_list *list = ZEND_TYPE_LIST(*type);
 		if (ZEND_TYPE_USES_ARENA(*type) || zend_accel_in_shm(list)) {
@@ -376,6 +384,12 @@ static void zend_persist_type(zend_type *type) {
 			zend_persist_type(single_type);
 			continue;
 		}
+
+		if (ZEND_TYPE_HAS_TYPE_PARAMETER(*single_type)) {
+			zend_persist_type(single_type);
+			continue;
+		}
+
 		if (ZEND_TYPE_HAS_NAME(*single_type)) {
 			zend_string *type_name = ZEND_TYPE_NAME(*single_type);
 			zend_accel_store_interned_string(type_name);
@@ -385,6 +399,83 @@ static void zend_persist_type(zend_type *type) {
 			}
 		}
 	} ZEND_TYPE_FOREACH_END();
+}
+
+static zend_generic_parameter_list *zend_persist_generic_parameter_list(zend_generic_parameter_list *list)
+{
+	if (!list) {
+		return NULL;
+	}
+
+	zend_generic_parameter_list *persisted = zend_shared_memdup_put_free(
+		list,
+		ZEND_GENERIC_PARAMETER_LIST_SIZE(list->count)
+	);
+
+	for (uint32_t i = 0; i < persisted->count; i++) {
+		zend_generic_parameter *param = &persisted->parameters[i];
+		zend_accel_store_interned_string(param->name);
+		zend_persist_type(&param->bound);
+		zend_persist_type(&param->default_type);
+	}
+
+	return persisted;
+}
+
+static HashTable *zend_persist_generic_type_table_ht(HashTable *ht)
+{
+	zval *v;
+	zend_hash_persist(ht);
+	ZEND_HASH_FOREACH_VAL(ht, v) {
+		zend_type *boxed = Z_PTR_P(v);
+		zend_type *copy = zend_shared_memdup_put_free(boxed, sizeof(zend_type));
+		zend_persist_type(copy);
+		ZVAL_PTR(v, copy);
+	} ZEND_HASH_FOREACH_END();
+	HashTable *ptr = zend_shared_memdup_put_free(ht, sizeof(HashTable));
+	GC_SET_REFCOUNT(ptr, 2);
+	GC_TYPE_INFO(ptr) = GC_ARRAY | ((IS_ARRAY_IMMUTABLE|GC_NOT_COLLECTABLE) << GC_FLAGS_SHIFT);
+	return ptr;
+}
+
+static zend_generic_type_table *zend_persist_generic_type_table(zend_generic_type_table *table)
+{
+	if (!table) {
+		return NULL;
+	}
+
+	zend_generic_type_table *persisted = zend_shared_memdup_put_free(table, sizeof(*table));
+	if (persisted->return_type) {
+		persisted->return_type = zend_shared_memdup_put_free(persisted->return_type, sizeof(zend_type));
+		zend_persist_type(persisted->return_type);
+	}
+
+	if (persisted->extends) {
+		persisted->extends = zend_shared_memdup_put_free(persisted->extends, sizeof(zend_type));
+		zend_persist_type(persisted->extends);
+	}
+
+	if (persisted->parameters) {
+		persisted->parameters = zend_persist_generic_type_table_ht(persisted->parameters);
+	}
+
+	if (persisted->properties) {
+		persisted->properties = zend_persist_generic_type_table_ht(persisted->properties);
+	}
+
+	if (persisted->class_constants) {
+		persisted->class_constants = zend_persist_generic_type_table_ht(persisted->class_constants);
+	}
+
+	if (persisted->implements) {
+		persisted->implements = zend_persist_generic_type_table_ht(persisted->implements);
+	}
+
+	if (persisted->trait_uses) {
+		persisted->trait_uses = zend_persist_generic_type_table_ht(persisted->trait_uses);
+	}
+
+	return persisted;
 }
 
 static void zend_persist_op_array_ex(zend_op_array *op_array, zend_persistent_script* main_persistent_script)
@@ -697,6 +788,14 @@ static void zend_persist_op_array_ex(zend_op_array *op_array, zend_persistent_sc
 			zend_persist_op_array(&tmp);
 			op_array->dynamic_func_defs[i] = Z_PTR(tmp);
 		}
+	}
+
+	if (op_array->generic_parameters) {
+		op_array->generic_parameters = zend_persist_generic_parameter_list(op_array->generic_parameters);
+	}
+
+	if (op_array->generic_types) {
+		op_array->generic_types = zend_persist_generic_type_table(op_array->generic_types);
 	}
 
 	ZCG(mem) = (void*)((char*)ZCG(mem) + ZEND_ALIGNED_SIZE(zend_extensions_op_array_persist(op_array, ZCG(mem))));
@@ -1064,6 +1163,14 @@ zend_class_entry *zend_persist_class_entry(zend_class_entry *orig_ce)
 
 		if (ce->attributes) {
 			ce->attributes = zend_persist_attributes(ce->attributes);
+		}
+
+		if (ce->generic_parameters) {
+			ce->generic_parameters = zend_persist_generic_parameter_list(ce->generic_parameters);
+		}
+
+		if (ce->generic_types) {
+			ce->generic_types = zend_persist_generic_type_table(ce->generic_types);
 		}
 
 		if (ce->num_interfaces && !(ce->ce_flags & ZEND_ACC_LINKED)) {

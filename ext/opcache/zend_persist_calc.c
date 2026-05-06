@@ -197,6 +197,13 @@ static void zend_persist_attributes_calc(HashTable *attributes)
 
 static void zend_persist_type_calc(zend_type *type)
 {
+	if (ZEND_TYPE_HAS_TYPE_PARAMETER(*type)) {
+		zend_type_parameter_ref *ref = ZEND_TYPE_TYPE_PARAMETER(*type);
+		ADD_SIZE(sizeof(*ref));
+		ADD_INTERNED_STRING(ref->name);
+		return;
+	}
+
 	if (ZEND_TYPE_HAS_LIST(*type)) {
 		ADD_SIZE(ZEND_TYPE_LIST_SIZE(ZEND_TYPE_LIST(*type)->num_types));
 	}
@@ -207,12 +214,81 @@ static void zend_persist_type_calc(zend_type *type)
 			zend_persist_type_calc(single_type);
 			continue;
 		}
+
+		if (ZEND_TYPE_HAS_TYPE_PARAMETER(*single_type)) {
+			zend_persist_type_calc(single_type);
+			continue;
+		}
+
 		if (ZEND_TYPE_HAS_NAME(*single_type)) {
 			zend_string *type_name = ZEND_TYPE_NAME(*single_type);
 			ADD_INTERNED_STRING(type_name);
 			ZEND_TYPE_SET_PTR(*single_type, type_name);
 		}
 	} ZEND_TYPE_FOREACH_END();
+}
+
+static void zend_persist_generic_parameter_list_calc(zend_generic_parameter_list *list)
+{
+	if (!list) {
+		return;
+	}
+
+	ADD_SIZE(ZEND_GENERIC_PARAMETER_LIST_SIZE(list->count));
+	for (uint32_t i = 0; i < list->count; i++) {
+		ADD_INTERNED_STRING(list->parameters[i].name);
+		zend_persist_type_calc(&list->parameters[i].bound);
+		zend_persist_type_calc(&list->parameters[i].default_type);
+	}
+}
+
+static void zend_persist_generic_type_table_ht_calc(HashTable *ht)
+{
+	zval *v;
+	zend_hash_persist_calc(ht);
+	ZEND_HASH_FOREACH_VAL(ht, v) {
+		ADD_SIZE(sizeof(zend_type));
+		zend_persist_type_calc((zend_type *) Z_PTR_P(v));
+	} ZEND_HASH_FOREACH_END();
+	ADD_SIZE(sizeof(HashTable));
+}
+
+static void zend_persist_generic_type_table_calc(zend_generic_type_table *table)
+{
+	if (!table) {
+		return;
+	}
+
+	ADD_SIZE(sizeof(*table));
+	if (table->return_type) {
+		ADD_SIZE(sizeof(zend_type));
+		zend_persist_type_calc(table->return_type);
+	}
+
+	if (table->extends) {
+		ADD_SIZE(sizeof(zend_type));
+		zend_persist_type_calc(table->extends);
+	}
+
+	if (table->parameters) {
+		zend_persist_generic_type_table_ht_calc(table->parameters);
+	}
+
+	if (table->properties) {
+		zend_persist_generic_type_table_ht_calc(table->properties);
+	}
+
+	if (table->class_constants) {
+		zend_persist_generic_type_table_ht_calc(table->class_constants);
+	}
+
+	if (table->implements) {
+		zend_persist_generic_type_table_ht_calc(table->implements);
+	}
+
+	if (table->trait_uses) {
+		zend_persist_generic_type_table_ht_calc(table->trait_uses);
+	}
 }
 
 static void zend_persist_op_array_calc_ex(zend_op_array *op_array)
@@ -343,6 +419,9 @@ static void zend_persist_op_array_calc_ex(zend_op_array *op_array)
 			zend_persist_op_array_calc(&tmp);
 		}
 	}
+
+	zend_persist_generic_parameter_list_calc(op_array->generic_parameters);
+	zend_persist_generic_type_table_calc(op_array->generic_types);
 
 	ADD_SIZE(ZEND_ALIGNED_SIZE(zend_extensions_op_array_persist_calc(op_array)));
 }
@@ -536,6 +615,9 @@ void zend_persist_class_entry_calc(zend_class_entry *ce)
 		if (ce->attributes) {
 			zend_persist_attributes_calc(ce->attributes);
 		}
+
+		zend_persist_generic_parameter_list_calc(ce->generic_parameters);
+		zend_persist_generic_type_table_calc(ce->generic_types);
 
 		if (ce->num_interfaces) {
 			uint32_t i;
