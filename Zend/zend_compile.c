@@ -444,6 +444,7 @@ static void zend_generic_scope_push(zend_generic_parameter_list *params, uint8_t
 	entry->params = params;
 	entry->visible_count = params ? params->count : 0;
 	entry->self_compiling = NULL;
+	entry->shadowing_classes = NULL;
 	entry->origin = origin;
 	entry->outer = CG(generic_scope);
 	CG(generic_scope) = entry;
@@ -454,6 +455,11 @@ static void zend_generic_scope_pop(void) /* {{{ */
 {
 	zend_generic_scope_entry *top = CG(generic_scope);
 	ZEND_ASSERT(top != NULL);
+	if (top->shadowing_classes) {
+		zend_hash_destroy(top->shadowing_classes);
+		FREE_HASHTABLE(top->shadowing_classes);
+	}
+
 	CG(generic_scope) = top->outer;
 	efree(top);
 }
@@ -462,18 +468,28 @@ static void zend_generic_scope_pop(void) /* {{{ */
 static zend_generic_parameter *zend_generic_lookup_full(
 		const zend_string *name, uint8_t *origin_out, uint32_t *index_out) /* {{{ */
 {
+	zend_string *lc_name = zend_string_tolower(name);
 	for (zend_generic_scope_entry *e = CG(generic_scope); e; e = e->outer) {
+		if (e->shadowing_classes && zend_hash_exists(e->shadowing_classes, lc_name)) {
+			zend_string_release(lc_name);
+			return NULL;
+		}
+
 		zend_generic_parameter_list *params = e->params;
 		for (uint32_t i = 0; i < e->visible_count; i++) {
 			if (zend_string_equals(params->parameters[i].name, name)) {
 				if (origin_out) *origin_out = e->origin;
 				if (index_out) *index_out = i;
+				zend_string_release(lc_name);
 				return &params->parameters[i];
 			}
 		}
 	}
+
+	zend_string_release(lc_name);
 	return NULL;
 }
+/* }}} */
 
 /* Detects forward reference: a name that matches a parameter declared later in
  * the innermost scope's parameter list. Returns the index of the not-yet-visible
@@ -1552,10 +1568,20 @@ static zend_string *zend_resolve_class_name_ast(zend_ast *ast) /* {{{ */
 	if (ast->kind == ZEND_AST_GENERIC_NAMED_TYPE) {
 		ast = ast->child[0];
 	}
+
 	const zval *class_name = zend_ast_get_zval(ast);
 	if (Z_TYPE_P(class_name) != IS_STRING) {
 		zend_error_noreturn(E_COMPILE_ERROR, "Illegal class name");
 	}
+
+	if ((ast->attr & ZEND_NAME_NOT_FQ) == ZEND_NAME_NOT_FQ
+			&& zend_generic_lookup(Z_STR_P(class_name))) {
+		zend_error_noreturn(E_COMPILE_ERROR,
+			"Cannot use generic type parameter %s as a class reference at runtime; "
+			"bound-erased generic types have no runtime representation",
+			Z_STRVAL_P(class_name));
+	}
+
 	return zend_resolve_class_name(Z_STR_P(class_name), ast->attr);
 }
 /* }}} */
@@ -10037,6 +10063,20 @@ static void zend_compile_class_decl(znode *result, const zend_ast *ast, bool top
 		}
 
 		zend_register_seen_symbol(lcname, ZEND_SYMBOL_CLASS);
+
+		/* If a generic scope is active, this declaration shadows any generic
+		 * type parameter with the same (case-insensitive) name. Register the
+		 * unqualified lc_name in the innermost scope so subsequent lookups
+		 * resolve to the class instead of the type parameter. */
+		if (CG(generic_scope)) {
+			zend_string *unqualified_lc = zend_string_tolower(unqualified_name);
+			if (!CG(generic_scope)->shadowing_classes) {
+				ALLOC_HASHTABLE(CG(generic_scope)->shadowing_classes);
+				zend_hash_init(CG(generic_scope)->shadowing_classes, 4, NULL, NULL, 0);
+			}
+			zend_hash_add_empty_element(CG(generic_scope)->shadowing_classes, unqualified_lc);
+			zend_string_release(unqualified_lc);
+		}
 	} else {
 		/* Find an anon class name that is not in use yet. */
 		name = NULL;
