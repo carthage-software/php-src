@@ -2109,14 +2109,14 @@ static ZEND_COLD void zend_ast_export_generic_call_type_argument_list(smart_str 
 
 static ZEND_COLD void zend_ast_export_generic_type_parameter(smart_str *str, zend_ast *ast, int indent)
 {
-	switch (ast->attr) {
-		case 1:
+	switch ((zend_generic_variance) ast->attr) {
+		case ZEND_GENERIC_VARIANCE_COVARIANT:
 			smart_str_appendc(str, '+');
 			break;
-		case 2:
+		case ZEND_GENERIC_VARIANCE_CONTRAVARIANT:
 			smart_str_appendc(str, '-');
 			break;
-		default:
+		case ZEND_GENERIC_VARIANCE_INVARIANT:
 			break;
 	}
 	smart_str_append(str, zend_ast_get_str(ast->child[0]));

@@ -8580,7 +8580,7 @@ ZEND_METHOD(ReflectionTypeParameterReference, getTypeParameter)
 	zval declaring_zv;
 	ZVAL_UNDEF(&declaring_zv);
 
-	if (tp->origin == 0 /* class */) {
+	if (tp->origin == ZEND_GENERIC_ORIGIN_CLASS_LIKE) {
 		if (!ref->declaring_class) {
 			zend_throw_error(NULL,
 				"Type parameter reference has no declaring class context");
@@ -8589,7 +8589,7 @@ ZEND_METHOD(ReflectionTypeParameterReference, getTypeParameter)
 
 		list = ref->declaring_class->generic_parameters;
 		zend_reflection_class_factory(ref->declaring_class, &declaring_zv);
-	} else /* function */ {
+	} else {
 		if (!ref->declaring_fn) {
 			zend_throw_error(NULL,
 				"Type parameter reference has no declaring function context");
