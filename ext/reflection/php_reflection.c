@@ -102,6 +102,9 @@ PHPAPI zend_class_entry *reflection_enum_unit_case_ptr;
 PHPAPI zend_class_entry *reflection_enum_backed_case_ptr;
 PHPAPI zend_class_entry *reflection_fiber_ptr;
 PHPAPI zend_class_entry *reflection_constant_ptr;
+PHPAPI zend_class_entry *reflection_generic_type_parameter_ptr;
+PHPAPI zend_class_entry *reflection_type_parameter_reference_ptr;
+PHPAPI zend_class_entry *reflection_generic_variance_ptr;
 PHPAPI zend_class_entry *reflection_property_hook_type_ptr;
 
 #define GET_REFLECTION_OBJECT() do { \
@@ -143,6 +146,15 @@ typedef struct _type_reference {
 	/* Whether to use backwards compatible null representation */
 	bool legacy_behavior;
 } type_reference;
+
+/* Struct for generic type-parameter reflection. Points back at a parameter slot
+ * inside the declaring entity's zend_generic_parameter_list. Lifetime is bound
+ * to the declaring class_entry / op_array. */
+typedef struct _generic_parameter_reference {
+	zend_generic_parameter *param;       /* points into a zend_generic_parameter_list */
+	uint32_t index;                       /* position in the list */
+	zval declaring;                       /* zval-wrapped ReflectionClass / ReflectionFunctionAbstract */
+} generic_parameter_reference;
 
 /* Struct for attributes */
 typedef struct _attribute_reference {
@@ -8168,6 +8180,309 @@ ZEND_METHOD(ReflectionConstant, __toString)
 	RETURN_STR(smart_str_extract(&str));
 }
 
+ZEND_METHOD(ReflectionGenericTypeParameter, __construct)
+{
+	zend_throw_exception(reflection_exception_ptr,
+		"Cannot directly instantiate ReflectionGenericTypeParameter", 0);
+}
+
+ZEND_METHOD(ReflectionTypeParameterReference, __construct)
+{
+	zend_throw_exception(reflection_exception_ptr,
+		"Cannot directly instantiate ReflectionTypeParameterReference", 0);
+}
+
+
+static void reflection_generic_type_parameter_factory(
+		zend_generic_parameter *param, uint32_t index, zval *declaring, zval *object)
+{
+	reflection_object *intern;
+	generic_parameter_reference *reference;
+
+	object_init_ex(object, reflection_generic_type_parameter_ptr);
+	intern = Z_REFLECTION_P(object);
+	reference = emalloc(sizeof(generic_parameter_reference));
+	reference->param = param;
+	reference->index = index;
+	ZVAL_COPY(&reference->declaring, declaring);
+	intern->ptr = reference;
+	intern->ref_type = REF_TYPE_OTHER;
+
+	ZVAL_STR_COPY(reflection_prop_name(object), param->name);
+}
+
+static void reflection_build_generic_parameters_array(
+		zend_generic_parameter_list *list, zval *declaring, zval *return_value)
+{
+	if (!list) {
+		array_init(return_value);
+		return;
+	}
+	array_init_size(return_value, list->count);
+	for (uint32_t i = 0; i < list->count; i++) {
+		zval entry;
+		reflection_generic_type_parameter_factory(&list->parameters[i], i, declaring, &entry);
+		zend_hash_next_index_insert_new(Z_ARRVAL_P(return_value), &entry);
+	}
+}
+
+ZEND_METHOD(ReflectionFunctionAbstract, isGeneric)
+{
+	reflection_object *intern;
+	zend_function *fptr;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(fptr);
+
+	if (fptr->type != ZEND_USER_FUNCTION) {
+		RETURN_FALSE;
+	}
+	RETURN_BOOL(fptr->op_array.generic_parameters != NULL);
+}
+
+ZEND_METHOD(ReflectionFunctionAbstract, getGenericParameters)
+{
+	reflection_object *intern;
+	zend_function *fptr;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(fptr);
+
+	if (fptr->type != ZEND_USER_FUNCTION) {
+		array_init(return_value);
+		return;
+	}
+	reflection_build_generic_parameters_array(fptr->op_array.generic_parameters, ZEND_THIS, return_value);
+}
+
+ZEND_METHOD(ReflectionClass, isGeneric)
+{
+	reflection_object *intern;
+	zend_class_entry *ce;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(ce);
+
+	RETURN_BOOL(ce->generic_parameters != NULL);
+}
+
+ZEND_METHOD(ReflectionClass, getGenericParameters)
+{
+	reflection_object *intern;
+	zend_class_entry *ce;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(ce);
+
+	reflection_build_generic_parameters_array(ce->generic_parameters, ZEND_THIS, return_value);
+}
+
+#define GET_GENERIC_PARAMETER_REFERENCE(intern, param_ref) \
+	do { \
+		(intern) = Z_REFLECTION_P(getThis()); \
+		if ((intern)->ptr == NULL) { \
+			zend_throw_error(NULL, "Internal error: Failed to retrieve the type parameter reference"); \
+			RETURN_THROWS(); \
+		} \
+		(param_ref) = (generic_parameter_reference *) (intern)->ptr; \
+	} while (0)
+
+ZEND_METHOD(ReflectionGenericTypeParameter, getName)
+{
+	reflection_object *intern;
+	generic_parameter_reference *ref;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_GENERIC_PARAMETER_REFERENCE(intern, ref);
+	RETURN_STR_COPY(ref->param->name);
+}
+
+ZEND_METHOD(ReflectionGenericTypeParameter, getPosition)
+{
+	reflection_object *intern;
+	generic_parameter_reference *ref;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_GENERIC_PARAMETER_REFERENCE(intern, ref);
+	RETURN_LONG((zend_long) ref->index);
+}
+
+ZEND_METHOD(ReflectionGenericTypeParameter, getVariance)
+{
+	reflection_object *intern;
+	generic_parameter_reference *ref;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_GENERIC_PARAMETER_REFERENCE(intern, ref);
+
+	const char *case_name;
+	switch (ref->param->variance) {
+		case 1:  case_name = "Covariant"; break;
+		case 2:  case_name = "Contravariant"; break;
+		default: case_name = "Invariant"; break;
+	}
+	zend_object *case_obj = zend_enum_get_case_cstr(reflection_generic_variance_ptr, case_name);
+	if (!case_obj) {
+		zend_throw_error(NULL, "Internal error: ReflectionGenericVariance enum case not found");
+		RETURN_THROWS();
+	}
+	ZVAL_OBJ_COPY(return_value, case_obj);
+}
+
+ZEND_METHOD(ReflectionGenericTypeParameter, hasBound)
+{
+	reflection_object *intern;
+	generic_parameter_reference *ref;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_GENERIC_PARAMETER_REFERENCE(intern, ref);
+	RETURN_BOOL(ZEND_TYPE_IS_SET(ref->param->bound));
+}
+
+ZEND_METHOD(ReflectionGenericTypeParameter, getBound)
+{
+	reflection_object *intern;
+	generic_parameter_reference *ref;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_GENERIC_PARAMETER_REFERENCE(intern, ref);
+
+	if (!ZEND_TYPE_IS_SET(ref->param->bound)) {
+		RETURN_NULL();
+	}
+	reflection_type_factory(ref->param->bound, return_value, false);
+}
+
+ZEND_METHOD(ReflectionGenericTypeParameter, hasDefault)
+{
+	reflection_object *intern;
+	generic_parameter_reference *ref;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_GENERIC_PARAMETER_REFERENCE(intern, ref);
+	RETURN_BOOL(ZEND_TYPE_IS_SET(ref->param->default_type));
+}
+
+ZEND_METHOD(ReflectionGenericTypeParameter, getDefault)
+{
+	reflection_object *intern;
+	generic_parameter_reference *ref;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_GENERIC_PARAMETER_REFERENCE(intern, ref);
+
+	if (!ZEND_TYPE_IS_SET(ref->param->default_type)) {
+		RETURN_NULL();
+	}
+	reflection_type_factory(ref->param->default_type, return_value, false);
+}
+
+ZEND_METHOD(ReflectionGenericTypeParameter, getDeclaringEntity)
+{
+	reflection_object *intern;
+	generic_parameter_reference *ref;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_GENERIC_PARAMETER_REFERENCE(intern, ref);
+	ZVAL_COPY(return_value, &ref->declaring);
+}
+
+ZEND_METHOD(ReflectionGenericTypeParameter, __toString)
+{
+	reflection_object *intern;
+	generic_parameter_reference *ref;
+	smart_str str = {0};
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_GENERIC_PARAMETER_REFERENCE(intern, ref);
+
+	switch (ref->param->variance) {
+		case 1:
+			smart_str_appendc(&str, '+');
+			break;
+		case 2:
+			smart_str_appendc(&str, '-');
+			break;
+		default:
+			break;
+	}
+	smart_str_append(&str, ref->param->name);
+	if (ZEND_TYPE_IS_SET(ref->param->bound)) {
+		zend_string *bound = zend_type_to_string(ref->param->bound);
+		smart_str_appends(&str, " : ");
+		smart_str_append(&str, bound);
+		zend_string_release(bound);
+	}
+	if (ZEND_TYPE_IS_SET(ref->param->default_type)) {
+		zend_string *def = zend_type_to_string(ref->param->default_type);
+		smart_str_appends(&str, " = ");
+		smart_str_append(&str, def);
+		zend_string_release(def);
+	}
+	RETURN_NEW_STR(smart_str_extract(&str));
+}
+
+ZEND_METHOD(ReflectionTypeParameterReference, getName)
+{
+	reflection_object *intern;
+	type_reference *ref;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(ref);
+
+	if (!ZEND_TYPE_HAS_TYPE_PARAMETER(ref->type)) {
+		zend_throw_error(NULL, "Type parameter reference has no parameter");
+		RETURN_THROWS();
+	}
+	zend_type_parameter_ref *tp = ZEND_TYPE_TYPE_PARAMETER(ref->type);
+	RETURN_STR_COPY(tp->name);
+}
+
+ZEND_METHOD(ReflectionTypeParameterReference, getTypeParameter)
+{
+	/* TODO(azjezz): resolution to the originating ReflectionGenericTypeParameter requires the
+	 * declaring entity, which is not currently threaded through type_reference. */
+	zend_throw_error(NULL,
+		"ReflectionTypeParameterReference::getTypeParameter() requires the declaring "
+		"entity to be threaded through; not yet implemented");
+	RETURN_THROWS();
+}
+
+ZEND_METHOD(ReflectionTypeParameterReference, allowsNull)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+	RETURN_TRUE;
+}
+
+ZEND_METHOD(ReflectionTypeParameterReference, __toString)
+{
+	reflection_object *intern;
+	type_reference *ref;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(ref);
+
+	if (!ZEND_TYPE_HAS_TYPE_PARAMETER(ref->type)) {
+		RETURN_EMPTY_STRING();
+	}
+	zend_type_parameter_ref *tp = ZEND_TYPE_TYPE_PARAMETER(ref->type);
+	RETURN_STR_COPY(tp->name);
+}
+
+ZEND_METHOD(ReflectionNamedType, hasGenericArguments)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+	/* TODO(azjezz): pre-erasure type-argument exposure on use-site named types requires
+	 * pre-erasure storage in the generic side table to be threaded into reflection_type_factory. */
+	RETURN_FALSE;
+}
+
+ZEND_METHOD(ReflectionNamedType, getGenericArguments)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+	array_init(return_value);
+}
+
 PHP_MINIT_FUNCTION(reflection) /* {{{ */
 {
 	memcpy(&reflection_object_handlers, &std_object_handlers, sizeof(zend_object_handlers));
@@ -8272,6 +8587,16 @@ PHP_MINIT_FUNCTION(reflection) /* {{{ */
 	reflection_constant_ptr->default_object_handlers = &reflection_object_handlers;
 
 	reflection_property_hook_type_ptr = register_class_PropertyHookType();
+
+	reflection_generic_variance_ptr = register_class_ReflectionGenericVariance();
+
+	reflection_generic_type_parameter_ptr = register_class_ReflectionGenericTypeParameter(reflector_ptr);
+	reflection_generic_type_parameter_ptr->create_object = reflection_objects_new;
+	reflection_generic_type_parameter_ptr->default_object_handlers = &reflection_object_handlers;
+
+	reflection_type_parameter_reference_ptr = register_class_ReflectionTypeParameterReference(reflection_type_ptr);
+	reflection_type_parameter_reference_ptr->create_object = reflection_objects_new;
+	reflection_type_parameter_reference_ptr->default_object_handlers = &reflection_object_handlers;
 
 	REFLECTION_G(key_initialized) = false;
 
