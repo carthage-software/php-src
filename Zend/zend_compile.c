@@ -1225,6 +1225,9 @@ static zend_string *zend_resolve_class_name(zend_string *name, uint32_t type) /*
 
 static zend_string *zend_resolve_class_name_ast(zend_ast *ast) /* {{{ */
 {
+	if (ast->kind == ZEND_AST_GENERIC_NAMED_TYPE) {
+		ast = ast->child[0];
+	}
 	const zval *class_name = zend_ast_get_zval(ast);
 	if (Z_TYPE_P(class_name) != IS_STRING) {
 		zend_error_noreturn(E_COMPILE_ERROR, "Illegal class name");
@@ -1773,6 +1776,9 @@ static uint32_t zend_get_class_fetch_type_ast(zend_ast *name_ast) /* {{{ */
 
 static zend_string *zend_resolve_const_class_name_reference(zend_ast *ast, const char *type)
 {
+	if (ast->kind == ZEND_AST_GENERIC_NAMED_TYPE) {
+		ast = ast->child[0];
+	}
 	zend_string *class_name = zend_ast_get_str(ast);
 	if (ZEND_FETCH_CLASS_DEFAULT != zend_get_class_fetch_type_ast(ast)) {
 		zend_error_noreturn(E_COMPILE_ERROR,
@@ -2822,6 +2828,9 @@ static inline bool zend_can_write_to_variable(const zend_ast *ast) /* {{{ */
 
 static inline bool zend_is_const_default_class_ref(zend_ast *name_ast) /* {{{ */
 {
+	if (name_ast->kind == ZEND_AST_GENERIC_NAMED_TYPE) {
+		name_ast = name_ast->child[0];
+	}
 	if (name_ast->kind != ZEND_AST_ZVAL) {
 		return false;
 	}
@@ -2877,6 +2886,11 @@ static inline void zend_set_class_name_op1(zend_op *opline, znode *class_node) /
 static void zend_compile_class_ref(znode *result, zend_ast *name_ast, uint32_t fetch_flags) /* {{{ */
 {
 	uint32_t fetch_type;
+
+	/* Generic named type: discard type arguments and resolve the bare name. */
+	if (name_ast->kind == ZEND_AST_GENERIC_NAMED_TYPE) {
+		name_ast = name_ast->child[0];
+	}
 
 	if (name_ast->kind != ZEND_AST_ZVAL) {
 		znode name_node;
@@ -5217,10 +5231,10 @@ static zend_result zend_compile_func_array_map(znode *result, zend_ast_list *arg
 	znode call_result;
 	switch (callback->kind) {
 		case ZEND_AST_CALL:
-			zend_compile_expr(&call_result, zend_ast_create(ZEND_AST_CALL, callback->child[0], call_args));
+			zend_compile_expr(&call_result, zend_ast_create(ZEND_AST_CALL, callback->child[0], call_args, NULL));
 			break;
 		case ZEND_AST_STATIC_CALL:
-			zend_compile_expr(&call_result, zend_ast_create(ZEND_AST_STATIC_CALL, callback->child[0], callback->child[1], call_args));
+			zend_compile_expr(&call_result, zend_ast_create(ZEND_AST_STATIC_CALL, callback->child[0], callback->child[1], call_args, NULL));
 			break;
 	}
 	opline = zend_emit_op(NULL, ZEND_ADD_ARRAY_ELEMENT, &call_result, &key);
@@ -6826,23 +6840,23 @@ static void zend_compile_pipe(znode *result, zend_ast *ast, uint32_t type)
 		&& callable_ast->child[1]->kind == ZEND_AST_CALLABLE_CONVERT
 		&& zend_is_pipe_optimizable_callable_name(callable_ast->child[0])) {
 		fcall_ast = zend_ast_create(ZEND_AST_CALL,
-				callable_ast->child[0], arg_list_ast);
+				callable_ast->child[0], arg_list_ast, NULL);
 	/* Turn $foo |> bar::baz(...) into bar::baz($foo). */
 	} else if (callable_ast->kind == ZEND_AST_STATIC_CALL
 			&& callable_ast->child[2]->kind == ZEND_AST_CALLABLE_CONVERT) {
 		fcall_ast = zend_ast_create(ZEND_AST_STATIC_CALL,
-			callable_ast->child[0], callable_ast->child[1], arg_list_ast);
+			callable_ast->child[0], callable_ast->child[1], arg_list_ast, NULL);
 	/* Turn $foo |> $bar->baz(...) into $bar->baz($foo). */
 	} else if (callable_ast->kind == ZEND_AST_METHOD_CALL
 			&& callable_ast->child[2]->kind == ZEND_AST_CALLABLE_CONVERT) {
 		fcall_ast = zend_ast_create(ZEND_AST_METHOD_CALL,
-			callable_ast->child[0], callable_ast->child[1], arg_list_ast);
+			callable_ast->child[0], callable_ast->child[1], arg_list_ast, NULL);
 	/* Turn $foo |> $expr into ($expr)($foo) */
 	} else {
 		zend_compile_expr(&callable_result, callable_ast);
 		callable_ast = zend_ast_create_znode(&callable_result);
 		fcall_ast = zend_ast_create(ZEND_AST_CALL,
-			callable_ast, arg_list_ast);
+			callable_ast, arg_list_ast, NULL);
 	}
 
 	zend_do_extended_stmt(&operand_result);
@@ -7386,6 +7400,9 @@ ZEND_API void zend_set_function_arg_flags(zend_function *func) /* {{{ */
 static zend_type zend_compile_single_typename(zend_ast *ast)
 {
 	ZEND_ASSERT(!(ast->attr & ZEND_TYPE_NULLABLE));
+	if (ast->kind == ZEND_AST_GENERIC_NAMED_TYPE) {
+		ast = ast->child[0];
+	}
 	if (ast->kind == ZEND_AST_TYPE) {
 		if (ast->attr == IS_STATIC && !CG(active_class_entry) && zend_is_scope_known()) {
 			zend_error_noreturn(E_COMPILE_ERROR,
@@ -11242,7 +11259,7 @@ static void zend_compile_shell_exec(znode *result, const zend_ast *ast) /* {{{ *
 	ZVAL_STRING(&fn_name, "shell_exec");
 	name_ast = zend_ast_create_zval(&fn_name);
 	args_ast = zend_ast_create_list(1, ZEND_AST_ARG_LIST, expr_ast);
-	call_ast = zend_ast_create(ZEND_AST_CALL, name_ast, args_ast);
+	call_ast = zend_ast_create(ZEND_AST_CALL, name_ast, args_ast, NULL);
 
 	zend_compile_expr(result, call_ast);
 
