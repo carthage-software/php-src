@@ -438,14 +438,27 @@ static zend_generic_parameter_list *zend_persist_generic_parameter_list(zend_gen
 
 static HashTable *zend_persist_generic_type_table_ht(HashTable *ht)
 {
-	zval *v;
 	zend_hash_persist(ht);
-	ZEND_HASH_FOREACH_VAL(ht, v) {
-		zend_type *boxed = Z_PTR_P(v);
-		zend_type *copy = zend_shared_memdup_put_free(boxed, sizeof(zend_type));
-		zend_persist_type(copy);
-		ZVAL_PTR(v, copy);
-	} ZEND_HASH_FOREACH_END();
+	if (HT_IS_PACKED(ht)) {
+		zval *v;
+		ZEND_HASH_PACKED_FOREACH_VAL(ht, v) {
+			zend_type *boxed = Z_PTR_P(v);
+			zend_type *copy = zend_shared_memdup_put_free(boxed, sizeof(zend_type));
+			zend_persist_type(copy);
+			Z_PTR_P(v) = copy;
+		} ZEND_HASH_FOREACH_END();
+	} else {
+		Bucket *p;
+		ZEND_HASH_MAP_FOREACH_BUCKET(ht, p) {
+			if (p->key) {
+				zend_accel_store_interned_string(p->key);
+			}
+			zend_type *boxed = Z_PTR(p->val);
+			zend_type *copy = zend_shared_memdup_put_free(boxed, sizeof(zend_type));
+			zend_persist_type(copy);
+			Z_PTR(p->val) = copy;
+		} ZEND_HASH_FOREACH_END();
+	}
 	HashTable *ptr = zend_shared_memdup_put_free(ht, sizeof(HashTable));
 	GC_SET_REFCOUNT(ptr, 2);
 	GC_TYPE_INFO(ptr) = GC_ARRAY | ((IS_ARRAY_IMMUTABLE|GC_NOT_COLLECTABLE) << GC_FLAGS_SHIFT);

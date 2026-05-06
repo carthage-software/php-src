@@ -257,12 +257,23 @@ static void zend_persist_generic_parameter_list_calc(zend_generic_parameter_list
 
 static void zend_persist_generic_type_table_ht_calc(HashTable *ht)
 {
-	zval *v;
 	zend_hash_persist_calc(ht);
-	ZEND_HASH_FOREACH_VAL(ht, v) {
-		ADD_SIZE(sizeof(zend_type));
-		zend_persist_type_calc((zend_type *) Z_PTR_P(v));
-	} ZEND_HASH_FOREACH_END();
+	if (HT_IS_PACKED(ht)) {
+		zval *v;
+		ZEND_HASH_PACKED_FOREACH_VAL(ht, v) {
+			ADD_SIZE(sizeof(zend_type));
+			zend_persist_type_calc((zend_type *) Z_PTR_P(v));
+		} ZEND_HASH_FOREACH_END();
+	} else {
+		Bucket *p;
+		ZEND_HASH_MAP_FOREACH_BUCKET(ht, p) {
+			if (p->key) {
+				ADD_INTERNED_STRING(p->key);
+			}
+			ADD_SIZE(sizeof(zend_type));
+			zend_persist_type_calc((zend_type *) Z_PTR(p->val));
+		} ZEND_HASH_FOREACH_END();
+	}
 	ADD_SIZE(sizeof(HashTable));
 }
 
