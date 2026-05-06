@@ -376,10 +376,16 @@ name:
 ;
 
 attribute_decl:
-		class_name
-			{ $$ = zend_ast_create(ZEND_AST_ATTRIBUTE, $1, NULL); }
-	|	class_name argument_list
-			{ $$ = zend_ast_create(ZEND_AST_ATTRIBUTE, $1, $2); }
+		class_name optional_call_type_argument_list
+			{
+				if ($2) zend_ast_destroy($2);
+				$$ = zend_ast_create(ZEND_AST_ATTRIBUTE, $1, NULL);
+			}
+	|	class_name optional_call_type_argument_list argument_list
+			{
+				if ($2) zend_ast_destroy($2);
+				$$ = zend_ast_create(ZEND_AST_ATTRIBUTE, $1, $3);
+			}
 ;
 
 attribute_group:
