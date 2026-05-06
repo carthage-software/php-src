@@ -122,10 +122,12 @@ typedef struct _zend_file_context {
 } zend_file_context;
 
 typedef struct _zend_generic_parameter {
-	zend_string *name;        /* type-parameter name */
-	uint8_t variance;         /* 0=invariant, 1=covariant, 2=contravariant */
-	zend_type bound;          /* pre-erasure; ZEND_TYPE_NONE if unbounded */
-	zend_type default_type;   /* pre-erasure; ZEND_TYPE_NONE if no default */
+	zend_string *name;        		/* type-parameter name */
+	uint8_t variance;         		/* 0=invariant, 1=covariant, 2=contravariant */
+	zend_type bound;          		/* runtime erased; ZEND_TYPE_NONE if unbounded */
+	zend_type bound_pre_erasure;   	/* pre-erasure; ZEND_TYPE_NONE if same as `bound` */
+	zend_type default_type;   		/* runtime erased; ZEND_TYPE_NONE if no default */
+	zend_type default_pre_erasure; 	/* pre-erasure; ZEND_TYPE_NONE if same as `default_type` */
 } zend_generic_parameter;
 
 typedef struct _zend_generic_parameter_list {
@@ -149,7 +151,9 @@ typedef struct _zend_generic_type_table {
 /* Compile-time linked stack of in-scope generic type parameters. */
 typedef struct _zend_generic_scope_entry {
 	zend_generic_parameter_list *params;
-	uint8_t origin;  /* 0 = class/interface/trait, 1 = function/method/closure/arrow-fn */
+	uint32_t visible_count; 						/* number of parameters in `params` already declared */
+	struct _zend_generic_parameter *self_compiling; /* param whose bound/default is being compiled, or NULL */
+	uint8_t origin;  								/* 0 = class/interface/trait, 1 = function/method/closure/arrow-fn */
 	struct _zend_generic_scope_entry *outer;
 } zend_generic_scope_entry;
 

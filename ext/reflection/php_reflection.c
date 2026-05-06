@@ -1522,28 +1522,26 @@ static void reflection_type_factory_ex(
 	reflection_object *intern;
 	type_reference *reference;
 
-	zend_type tp_type;
-	bool is_tp = false;
-	if (ZEND_TYPE_HAS_TYPE_PARAMETER(type)) {
-		tp_type = type;
-		is_tp = true;
-	} else if (ZEND_TYPE_HAS_TYPE_PARAMETER(pre_erasure)) {
-		tp_type = pre_erasure;
-		is_tp = true;
+	if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(type)) {
+		ZEND_ASSERT(!ZEND_TYPE_HAS_NAMED_WITH_ARGS(pre_erasure));
+		pre_erasure = type;
+		zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(type);
+		zend_string_addref(named->name);
+		type = (zend_type) ZEND_TYPE_INIT_CLASS(named->name, 0, 0);
 	}
 
-	if (is_tp) {
+	if (ZEND_TYPE_HAS_TYPE_PARAMETER(type)) {
 		object_init_ex(object, reflection_type_parameter_reference_ptr);
 		intern = Z_REFLECTION_P(object);
 		reference = (type_reference*) emalloc(sizeof(type_reference));
-		reference->type = tp_type;
+		reference->type = type;
 		reference->legacy_behavior = false;
 		reference->pre_erasure = (zend_type) ZEND_TYPE_INIT_NONE(0);
 		reference->declaring_class = declaring_class;
 		reference->declaring_fn = declaring_fn;
 		intern->ptr = reference;
 		intern->ref_type = REF_TYPE_TYPE;
-		zend_type_parameter_ref *tp = ZEND_TYPE_TYPE_PARAMETER(tp_type);
+		zend_type_parameter_ref *tp = ZEND_TYPE_TYPE_PARAMETER(type);
 		ZVAL_STR_COPY(reflection_prop_name(object), tp->name);
 		return;
 	}
@@ -8448,7 +8446,9 @@ ZEND_METHOD(ReflectionGenericTypeParameter, getBound)
 			declaring_fn = decl_intern->ptr;
 		}
 	}
-	reflection_type_factory_ex(ref->param->bound, return_value, false,
+	zend_type primary = ZEND_TYPE_IS_SET(ref->param->bound_pre_erasure)
+		? ref->param->bound_pre_erasure : ref->param->bound;
+	reflection_type_factory_ex(primary, return_value, false,
 		(zend_type) ZEND_TYPE_INIT_NONE(0), declaring_class, declaring_fn);
 }
 
@@ -8487,7 +8487,9 @@ ZEND_METHOD(ReflectionGenericTypeParameter, getDefault)
 		}
 	}
 
-	reflection_type_factory_ex(ref->param->default_type, return_value, false,
+	zend_type primary = ZEND_TYPE_IS_SET(ref->param->default_pre_erasure)
+		? ref->param->default_pre_erasure : ref->param->default_type;
+	reflection_type_factory_ex(primary, return_value, false,
 		(zend_type) ZEND_TYPE_INIT_NONE(0), declaring_class, declaring_fn);
 }
 

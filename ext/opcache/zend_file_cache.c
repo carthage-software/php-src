@@ -542,7 +542,9 @@ static void zend_file_cache_serialize_generic_parameter_list(
 	for (uint32_t i = 0; i < list->count; i++) {
 		SERIALIZE_STR(list->parameters[i].name);
 		zend_file_cache_serialize_type(&list->parameters[i].bound, script, info, buf);
+		zend_file_cache_serialize_type(&list->parameters[i].bound_pre_erasure, script, info, buf);
 		zend_file_cache_serialize_type(&list->parameters[i].default_type, script, info, buf);
+		zend_file_cache_serialize_type(&list->parameters[i].default_pre_erasure, script, info, buf);
 	}
 }
 
@@ -1569,7 +1571,9 @@ static void zend_file_cache_unserialize_generic_parameter_list(
 	for (uint32_t i = 0; i < list->count; i++) {
 		UNSERIALIZE_STR(list->parameters[i].name);
 		zend_file_cache_unserialize_type(&list->parameters[i].bound, scope, script, buf);
+		zend_file_cache_unserialize_type(&list->parameters[i].bound_pre_erasure, scope, script, buf);
 		zend_file_cache_unserialize_type(&list->parameters[i].default_type, scope, script, buf);
+		zend_file_cache_unserialize_type(&list->parameters[i].default_pre_erasure, scope, script, buf);
 	}
 }
 
