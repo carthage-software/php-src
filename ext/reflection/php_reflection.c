@@ -179,7 +179,8 @@ typedef enum {
 	REF_TYPE_TYPE,
 	REF_TYPE_PROPERTY,
 	REF_TYPE_CLASS_CONSTANT,
-	REF_TYPE_ATTRIBUTE
+	REF_TYPE_ATTRIBUTE,
+	REF_TYPE_GENERIC_PARAMETER
 } reflection_type_t;
 
 /* Struct for reflection objects */
@@ -277,6 +278,12 @@ static void reflection_free_objects_storage(zend_object *object) /* {{{ */
 				zend_string_release(attr_ref->filename);
 			}
 			efree(intern->ptr);
+			break;
+		}
+		case REF_TYPE_GENERIC_PARAMETER: {
+			generic_parameter_reference *ref = intern->ptr;
+			zval_ptr_dtor(&ref->declaring);
+			efree(ref);
 			break;
 		}
 		case REF_TYPE_GENERATOR:
@@ -8302,7 +8309,7 @@ static void reflection_generic_type_parameter_factory(
 	reference->index = index;
 	ZVAL_COPY(&reference->declaring, declaring);
 	intern->ptr = reference;
-	intern->ref_type = REF_TYPE_OTHER;
+	intern->ref_type = REF_TYPE_GENERIC_PARAMETER;
 
 	ZVAL_STR_COPY(reflection_prop_name(object), param->name);
 }
