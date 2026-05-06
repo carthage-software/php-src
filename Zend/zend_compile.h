@@ -121,6 +121,49 @@ typedef struct _zend_file_context {
 	HashTable seen_symbols;
 } zend_file_context;
 
+typedef struct _zend_generic_parameter {
+	zend_string *name;        /* type-parameter name */
+	uint8_t variance;         /* 0=invariant, 1=covariant, 2=contravariant */
+	zend_type bound;          /* pre-erasure; ZEND_TYPE_NONE if unbounded */
+	zend_type default_type;   /* pre-erasure; ZEND_TYPE_NONE if no default */
+} zend_generic_parameter;
+
+typedef struct _zend_generic_parameter_list {
+	uint32_t count;
+	zend_generic_parameter parameters[1];
+} zend_generic_parameter_list;
+
+#define ZEND_GENERIC_PARAMETER_LIST_SIZE(count) \
+	(sizeof(zend_generic_parameter_list) + ((count) - 1) * sizeof(zend_generic_parameter))
+
+typedef struct _zend_generic_type_table {
+	zend_type   *return_type;       /* function/method return; NULL if equal to erased */
+	zend_type   *extends;           /* class extends; NULL if equal */
+	HashTable   *parameters;        /* parameter index -> zend_type * */
+	HashTable   *properties;        /* zend_string * -> zend_type * */
+	HashTable   *class_constants;   /* zend_string * -> zend_type * */
+	HashTable   *implements;        /* implements index -> zend_type * */
+	HashTable   *trait_uses;        /* trait-use index -> zend_type * */
+} zend_generic_type_table;
+
+/* Compile-time linked stack of in-scope generic type parameters. */
+typedef struct _zend_generic_scope_entry {
+	zend_generic_parameter_list *params;
+	struct _zend_generic_scope_entry *outer;
+} zend_generic_scope_entry;
+
+ZEND_API zend_generic_parameter_list *zend_generic_parameter_list_alloc(uint32_t count, bool persistent);
+ZEND_API void zend_generic_parameter_list_destroy(zend_generic_parameter_list *list);
+ZEND_API zend_generic_type_table *zend_generic_type_table_alloc(void);
+ZEND_API void zend_generic_type_table_destroy(zend_generic_type_table *table);
+ZEND_API void zend_generic_type_table_set_return(zend_generic_type_table *t, zend_type type);
+ZEND_API void zend_generic_type_table_set_extends(zend_generic_type_table *t, zend_type type);
+ZEND_API void zend_generic_type_table_set_parameter(zend_generic_type_table *t, uint32_t idx, zend_type type);
+ZEND_API void zend_generic_type_table_set_property(zend_generic_type_table *t, zend_string *name, zend_type type);
+ZEND_API void zend_generic_type_table_set_class_constant(zend_generic_type_table *t, zend_string *name, zend_type type);
+ZEND_API void zend_generic_type_table_set_implements(zend_generic_type_table *t, uint32_t idx, zend_type type);
+ZEND_API void zend_generic_type_table_set_trait_use(zend_generic_type_table *t, uint32_t idx, zend_type type);
+
 typedef union _zend_parser_stack_elem {
 	zend_ast *ast;
 	zend_string *str;
@@ -575,6 +618,10 @@ struct _zend_op_array {
 	/* Functions that are declared dynamically are stored here and
 	 * referenced by index from opcodes. */
 	zend_op_array **dynamic_func_defs;
+
+	/* Generic-syntax metadata. NULL on non-generic functions/methods. */
+	zend_generic_parameter_list *generic_parameters;
+	zend_generic_type_table     *generic_types;
 
 	void *reserved[ZEND_MAX_RESERVED_RESOURCES];
 };
