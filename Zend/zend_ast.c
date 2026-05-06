@@ -2058,7 +2058,13 @@ static ZEND_COLD void zend_ast_export_type(smart_str *str, zend_ast *ast, int in
 		if (ast->attr & ZEND_TYPE_NULLABLE) {
 			smart_str_appendc(str, '?');
 		}
-		zend_ast_export_ns_name(str, ast->child[0], 0, indent);
+
+		zend_ast *name_ast = ast->child[0];
+		if (name_ast->kind == ZEND_AST_TYPE) {
+			zend_ast_export_type(str, name_ast, indent);
+		} else {
+			zend_ast_export_ns_name(str, name_ast, 0, indent);
+		}
 		zend_ast_export_generic_type_argument_list(str, ast->child[1], indent);
 		return;
 	}

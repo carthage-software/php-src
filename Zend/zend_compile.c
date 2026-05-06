@@ -579,12 +579,27 @@ static zend_type zend_compile_pre_erasure_typename(zend_ast *ast)
 		zend_ast *name_ast = ast->child[0];
 		zend_ast_list *args_list = zend_ast_get_list(ast->child[1]);
 		zend_type_named_with_args *payload = emalloc(ZEND_TYPE_NAMED_WITH_ARGS_SIZE(args_list->children));
-		payload->name = zend_string_copy(zval_make_interned_string(zend_ast_get_zval(name_ast)));
-		payload->name_attr = name_ast->attr;
+		if (name_ast->kind == ZEND_AST_TYPE) {
+			const char *cname;
+			switch (name_ast->attr) {
+				case IS_ARRAY:    cname = "array";    break;
+				case IS_STATIC:   cname = "static";   break;
+				default:
+					ZEND_UNREACHABLE();
+			}
+
+			payload->name = zend_string_init_interned(cname, strlen(cname), 0);
+			payload->name_attr = 0;
+		} else {
+			payload->name = zend_string_copy(zval_make_interned_string(zend_ast_get_zval(name_ast)));
+			payload->name_attr = name_ast->attr;
+		}
+
 		payload->count = args_list->children;
 		for (uint32_t i = 0; i < args_list->children; i++) {
 			payload->args[i] = zend_compile_pre_erasure_typename(args_list->child[i]);
 		}
+
 		ZEND_TYPE_SET_PTR(result, payload);
 		ZEND_TYPE_FULL_MASK(result) |= _ZEND_TYPE_NAMED_WITH_ARGS_BIT;
 	} else if (ast->kind == ZEND_AST_TYPE) {
