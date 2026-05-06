@@ -1,5 +1,5 @@
 --TEST--
-Reflection: getGenericArgumentsForParentInterface returns args from implements / interface-extends
+Reflection: getGenericArgumentsForParentInterface returns args from implements / interface-extends; throws when not ancestor
 --FILE--
 <?php
 interface I<K, V> {}
@@ -11,49 +11,33 @@ class WithoutArgs implements I {}
 class NotImplements {}
 class Multi implements I<bool, float>, J<string> {}
 
-// Lookup hits
-$rc = new ReflectionClass('WithArgs');
-echo "WithArgs/I: ";
-$args = $rc->getGenericArgumentsForParentInterface('I');
-echo $args === null ? "null" : implode(",", array_map(fn($t)=>$t->getName(), $args)), "\n";
+function show(string $cls, string $iface): void {
+    try {
+        $args = (new ReflectionClass($cls))->getGenericArgumentsForParentInterface($iface);
+    } catch (ReflectionException $e) {
+        echo "$cls/$iface: throw ({$e->getMessage()})\n";
+        return;
+    }
+    if (!$args) {
+        echo "$cls/$iface: []\n";
+        return;
+    }
+    echo "$cls/$iface: ", implode(",", array_map(fn($t)=>$t->getName(), $args)), "\n";
+}
 
-// Same name, different case
-echo "WithArgs/i (case insensitive): ";
-$args = $rc->getGenericArgumentsForParentInterface('i');
-echo $args === null ? "null" : implode(",", array_map(fn($t)=>$t->getName(), $args)), "\n";
-
-// Implements without args
-echo "WithoutArgs/I: ";
-var_dump($rc = new ReflectionClass('WithoutArgs'));
-$args = $rc->getGenericArgumentsForParentInterface('I');
-echo $args === null ? "null" : "non-null", "\n";
-
-// Not in implements list
-echo "NotImplements/I: ";
-$args = (new ReflectionClass('NotImplements'))->getGenericArgumentsForParentInterface('I');
-echo $args === null ? "null" : "non-null", "\n";
-
-// Multiple interfaces
-$rc = new ReflectionClass('Multi');
-echo "Multi/I: ";
-$args = $rc->getGenericArgumentsForParentInterface('I');
-echo $args === null ? "null" : implode(",", array_map(fn($t)=>$t->getName(), $args)), "\n";
-
-echo "Multi/J: ";
-$args = $rc->getGenericArgumentsForParentInterface('J');
-echo $args === null ? "null" : implode(",", array_map(fn($t)=>$t->getName(), $args)), "\n";
-
-// Interface extending interface (also queryable through this method)
-echo "K1/I: ";
-$args = (new ReflectionClass('K1'))->getGenericArgumentsForParentInterface('I');
-echo $args === null ? "null" : implode(",", array_map(fn($t)=>$t->getName(), $args)), "\n";
+show('WithArgs', 'I');
+show('WithArgs', 'i'); // case insensitive
+show('WithoutArgs', 'I');
+show('NotImplements', 'I');
+show('Multi', 'I');
+show('Multi', 'J');
+show('K1', 'I');
 ?>
---EXPECTF--
+--EXPECT--
 WithArgs/I: int,string
-WithArgs/i (case insensitive): int,string
-WithoutArgs/I: object(ReflectionClass)#%d (1) {%a}
-null
-NotImplements/I: null
+WithArgs/i: int,string
+WithoutArgs/I: []
+NotImplements/I: throw (I is not an ancestor interface of NotImplements)
 Multi/I: bool,float
 Multi/J: string
 K1/I: int,string

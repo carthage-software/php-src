@@ -8451,7 +8451,9 @@ ZEND_METHOD(ReflectionGenericTypeParameter, getBound)
 	GET_GENERIC_PARAMETER_REFERENCE(intern, ref);
 
 	if (!ZEND_TYPE_IS_SET(ref->param->bound)) {
-		RETURN_NULL();
+		zend_throw_exception_ex(reflection_exception_ptr, 0,
+			"Type parameter %s has no bound", ZSTR_VAL(ref->param->name));
+		RETURN_THROWS();
 	}
 	zend_class_entry *declaring_class = NULL;
 	zend_function *declaring_fn = NULL;
@@ -8490,7 +8492,9 @@ ZEND_METHOD(ReflectionGenericTypeParameter, getDefault)
 	GET_GENERIC_PARAMETER_REFERENCE(intern, ref);
 
 	if (!ZEND_TYPE_IS_SET(ref->param->default_type)) {
-		RETURN_NULL();
+		zend_throw_exception_ex(reflection_exception_ptr, 0,
+			"Type parameter %s has no default", ZSTR_VAL(ref->param->name));
+		RETURN_THROWS();
 	}
 
 	zend_class_entry *declaring_class = NULL;
@@ -8687,10 +8691,6 @@ ZEND_METHOD(ReflectionNamedType, getGenericArguments)
 static void reflection_build_named_args_list(zval *return_value, const zend_type *boxed,
 		zend_class_entry *declaring_class)
 {
-	if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) {
-		RETURN_NULL();
-	}
-
 	zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
 	array_init_size(return_value, named->count);
 	for (uint32_t i = 0; i < named->count; i++) {
@@ -8710,11 +8710,20 @@ ZEND_METHOD(ReflectionClass, getGenericArgumentsForParentClass)
 	ZEND_PARSE_PARAMETERS_NONE();
 	GET_REFLECTION_OBJECT_PTR(ce);
 
-	if (!ce->generic_types || !ce->generic_types->extends) {
-		RETURN_NULL();
+	bool has_parent = (ce->ce_flags & ZEND_ACC_LINKED)
+		? ce->parent != NULL
+		: ce->parent_name != NULL;
+	if (!has_parent) {
+		zend_throw_exception_ex(reflection_exception_ptr, 0,
+			"Class %s has no parent class", ZSTR_VAL(ce->name));
+		RETURN_THROWS();
 	}
 
-	reflection_build_named_args_list(return_value, ce->generic_types->extends, ce);
+	if (ce->generic_types && ce->generic_types->extends) {
+		reflection_build_named_args_list(return_value, ce->generic_types->extends, ce);
+		return;
+	}
+	RETURN_EMPTY_ARRAY();
 }
 
 ZEND_METHOD(ReflectionClass, getGenericArgumentsForParentInterface)
@@ -8728,22 +8737,40 @@ ZEND_METHOD(ReflectionClass, getGenericArgumentsForParentInterface)
 	ZEND_PARSE_PARAMETERS_END();
 	GET_REFLECTION_OBJECT_PTR(ce);
 
-	if (!ce->generic_types || !ce->generic_types->implements) {
-		RETURN_NULL();
+	bool is_ancestor = false;
+	if (ce->ce_flags & ZEND_ACC_LINKED) {
+		for (uint32_t i = 0; i < ce->num_interfaces; i++) {
+			if (zend_string_equals_ci(ce->interfaces[i]->name, name)) {
+				is_ancestor = true;
+				break;
+			}
+		}
+	} else {
+		for (uint32_t i = 0; i < ce->num_interfaces; i++) {
+			if (zend_string_equals_ci(ce->interface_names[i].name, name)) {
+				is_ancestor = true;
+				break;
+			}
+		}
+	}
+	if (!is_ancestor) {
+		zend_throw_exception_ex(reflection_exception_ptr, 0,
+			"%s is not an ancestor interface of %s", ZSTR_VAL(name), ZSTR_VAL(ce->name));
+		RETURN_THROWS();
 	}
 
-	zval *zv;
-	ZEND_HASH_FOREACH_VAL(ce->generic_types->implements, zv) {
-		zend_type *boxed = (zend_type *) Z_PTR_P(zv);
-		if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) {
+	if (ce->generic_types && ce->generic_types->implements) {
+		zval *zv;
+		ZEND_HASH_FOREACH_VAL(ce->generic_types->implements, zv) {
+			zend_type *boxed = (zend_type *) Z_PTR_P(zv);
 			zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
 			if (zend_string_equals_ci(named->name, name)) {
 				reflection_build_named_args_list(return_value, boxed, ce);
 				return;
 			}
-		}
-	} ZEND_HASH_FOREACH_END();
-	RETURN_NULL();
+		} ZEND_HASH_FOREACH_END();
+	}
+	RETURN_EMPTY_ARRAY();
 }
 
 ZEND_METHOD(ReflectionClass, getGenericArgumentsForUsedTrait)
@@ -8757,22 +8784,31 @@ ZEND_METHOD(ReflectionClass, getGenericArgumentsForUsedTrait)
 	ZEND_PARSE_PARAMETERS_END();
 	GET_REFLECTION_OBJECT_PTR(ce);
 
-	if (!ce->generic_types || !ce->generic_types->trait_uses) {
-		RETURN_NULL();
+	bool is_used = false;
+	for (uint32_t i = 0; i < ce->num_traits; i++) {
+		if (zend_string_equals_ci(ce->trait_names[i].name, name)) {
+			is_used = true;
+			break;
+		}
+	}
+	if (!is_used) {
+		zend_throw_exception_ex(reflection_exception_ptr, 0,
+			"%s is not a trait used by %s", ZSTR_VAL(name), ZSTR_VAL(ce->name));
+		RETURN_THROWS();
 	}
 
-	zval *zv;
-	ZEND_HASH_FOREACH_VAL(ce->generic_types->trait_uses, zv) {
-		zend_type *boxed = (zend_type *) Z_PTR_P(zv);
-		if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) {
+	if (ce->generic_types && ce->generic_types->trait_uses) {
+		zval *zv;
+		ZEND_HASH_FOREACH_VAL(ce->generic_types->trait_uses, zv) {
+			zend_type *boxed = (zend_type *) Z_PTR_P(zv);
 			zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
 			if (zend_string_equals_ci(named->name, name)) {
 				reflection_build_named_args_list(return_value, boxed, ce);
 				return;
 			}
-		}
-	} ZEND_HASH_FOREACH_END();
-	RETURN_NULL();
+		} ZEND_HASH_FOREACH_END();
+	}
+	RETURN_EMPTY_ARRAY();
 }
 
 PHP_MINIT_FUNCTION(reflection) /* {{{ */

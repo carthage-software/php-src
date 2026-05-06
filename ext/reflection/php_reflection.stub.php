@@ -449,32 +449,33 @@ class ReflectionClass implements Reflector
 
     /**
      * Returns the type arguments this class supplies at the parent-class extends
-     * site, in source order. Returns null if there is no parent class, or if
-     * the extends clause specified no type arguments.
+     * site, in source order. Returns an empty array if the extends clause
+     * specified no type arguments.
      *
-     * @return list<ReflectionType>|null
+     * @return list<ReflectionType>
+     * @throws ReflectionException if this class has no parent class
      */
-    public function getGenericArgumentsForParentClass(): ?array {}
+    public function getGenericArgumentsForParentClass(): array {}
 
     /**
-     * Returns the type arguments this class supplies for the named parent
-     * interface (a directly-listed `implements` entry, or, for an interface
-     * declaration, a directly-listed `extends` entry), in source order.
-     * Returns null if $name is not a directly-listed parent interface, or if
-     * no type arguments were specified at the use site.
+     * Returns the type arguments this class supplies for the named ancestor
+     * interface, in source order. Returns an empty array if no type arguments
+     * were specified at the use site.
      *
-     * @return list<ReflectionType>|null
+     * @return list<ReflectionType>
+     * @throws ReflectionException if $name is not an ancestor interface
      */
-    public function getGenericArgumentsForParentInterface(string $name): ?array {}
+    public function getGenericArgumentsForParentInterface(string $name): array {}
 
     /**
      * Returns the type arguments this class supplies at the use site for trait
-     * $name, in source order. Returns null if $name is not a directly-used
-     * trait, or if no type arguments were specified at the use site.
+     * $name, in source order. Returns an empty array if no type arguments were
+     * specified at the use site.
      *
-     * @return list<ReflectionType>|null
+     * @return list<ReflectionType>
+     * @throws ReflectionException if $name is not a directly-used trait
      */
-    public function getGenericArgumentsForUsedTrait(string $name): ?array {}
+    public function getGenericArgumentsForUsedTrait(string $name): array {}
 }
 
 class ReflectionObject extends ReflectionClass
@@ -844,11 +845,13 @@ final class ReflectionGenericTypeParameter implements Reflector
 
     public function hasBound(): bool {}
 
-    public function getBound(): ?ReflectionType {}
+    /** @throws ReflectionException if this type parameter has no bound; check hasBound() first */
+    public function getBound(): ReflectionType {}
 
     public function hasDefault(): bool {}
 
-    public function getDefault(): ?ReflectionType {}
+    /** @throws ReflectionException if this type parameter has no default; check hasDefault() first */
+    public function getDefault(): ReflectionType {}
 
     public function getDeclaringEntity(): ReflectionClass|ReflectionFunctionAbstract {}
 
