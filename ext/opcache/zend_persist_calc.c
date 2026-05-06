@@ -249,7 +249,9 @@ static void zend_persist_generic_parameter_list_calc(zend_generic_parameter_list
 	for (uint32_t i = 0; i < list->count; i++) {
 		ADD_INTERNED_STRING(list->parameters[i].name);
 		zend_persist_type_calc(&list->parameters[i].bound);
+		zend_persist_type_calc(&list->parameters[i].bound_pre_erasure);
 		zend_persist_type_calc(&list->parameters[i].default_type);
+		zend_persist_type_calc(&list->parameters[i].default_pre_erasure);
 	}
 }
 

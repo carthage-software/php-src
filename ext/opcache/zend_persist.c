@@ -428,7 +428,9 @@ static zend_generic_parameter_list *zend_persist_generic_parameter_list(zend_gen
 		zend_generic_parameter *param = &persisted->parameters[i];
 		zend_accel_store_interned_string(param->name);
 		zend_persist_type(&param->bound);
+		zend_persist_type(&param->bound_pre_erasure);
 		zend_persist_type(&param->default_type);
+		zend_persist_type(&param->default_pre_erasure);
 	}
 
 	return persisted;

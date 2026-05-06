@@ -442,6 +442,8 @@ static void zend_generic_scope_push(zend_generic_parameter_list *params, uint8_t
 {
 	zend_generic_scope_entry *entry = emalloc(sizeof(zend_generic_scope_entry));
 	entry->params = params;
+	entry->visible_count = params ? params->count : 0;
+	entry->self_compiling = NULL;
 	entry->origin = origin;
 	entry->outer = CG(generic_scope);
 	CG(generic_scope) = entry;
@@ -462,7 +464,7 @@ static zend_generic_parameter *zend_generic_lookup_full(
 {
 	for (zend_generic_scope_entry *e = CG(generic_scope); e; e = e->outer) {
 		zend_generic_parameter_list *params = e->params;
-		for (uint32_t i = 0; i < params->count; i++) {
+		for (uint32_t i = 0; i < e->visible_count; i++) {
 			if (zend_string_equals(params->parameters[i].name, name)) {
 				if (origin_out) *origin_out = e->origin;
 				if (index_out) *index_out = i;
@@ -472,7 +474,26 @@ static zend_generic_parameter *zend_generic_lookup_full(
 	}
 	return NULL;
 }
+
+/* Detects forward reference: a name that matches a parameter declared later in
+ * the innermost scope's parameter list. Returns the index of the not-yet-visible
+ * parameter, or -1 if no match. */
+static int zend_generic_lookup_forward(const zend_string *name) /* {{{ */
+{
+	zend_generic_scope_entry *e = CG(generic_scope);
+	if (!e) return -1;
+	zend_generic_parameter_list *params = e->params;
+	for (uint32_t i = e->visible_count; i < params->count; i++) {
+		if (zend_string_equals(params->parameters[i].name, name)) {
+			return (int) i;
+		}
+	}
+	return -1;
+}
 /* }}} */
+
+static bool zend_type_ast_has_generic_content(zend_ast *ast);
+static zend_type zend_compile_pre_erasure_typename(zend_ast *ast);
 
 static zend_generic_parameter *zend_generic_lookup(const zend_string *name) /* {{{ */
 {
@@ -505,15 +526,46 @@ static zend_generic_parameter_list *zend_compile_generic_type_parameter_list(zen
 			}
 		}
 
+		if (zend_generic_lookup(name)) {
+			zend_string *dup = zend_string_copy(name);
+			zend_generic_parameter_list_destroy(params);
+			zend_error_noreturn(E_COMPILE_ERROR,
+				"Type parameter %s shadows enclosing type parameter", ZSTR_VAL(dup));
+		}
+
 		params->parameters[i].name = zend_string_copy(name);
 		params->parameters[i].variance = (uint8_t) param_ast->attr;
+	}
+
+	params->count = list->children;
+
+	zend_generic_scope_push(params, /* origin */ 0);
+	CG(generic_scope)->visible_count = 0;
+
+	for (uint32_t i = 0; i < list->children; i++) {
+		zend_ast *param_ast = list->child[i];
+		CG(generic_scope)->visible_count = i + 1;
+		CG(generic_scope)->self_compiling = &params->parameters[i];
 		if (param_ast->child[1]) {
 			params->parameters[i].bound = zend_compile_typename(param_ast->child[1]);
+			if (zend_type_ast_has_generic_content(param_ast->child[1])) {
+				params->parameters[i].bound_pre_erasure =
+					zend_compile_pre_erasure_typename(param_ast->child[1]);
+			}
 		}
+
 		if (param_ast->child[2]) {
 			params->parameters[i].default_type = zend_compile_typename(param_ast->child[2]);
+			if (zend_type_ast_has_generic_content(param_ast->child[2])) {
+				params->parameters[i].default_pre_erasure =
+					zend_compile_pre_erasure_typename(param_ast->child[2]);
+			}
 		}
+
+		CG(generic_scope)->self_compiling = NULL;
 	}
+
+	zend_generic_scope_pop();
 
 	return params;
 }
@@ -623,6 +675,15 @@ static zend_type zend_compile_pre_erasure_typename(zend_ast *ast)
 			ZEND_TYPE_SET_PTR(result, ref);
 			ZEND_TYPE_FULL_MASK(result) |= _ZEND_TYPE_TYPE_PARAMETER_BIT;
 		} else {
+			if ((ast->attr & ZEND_NAME_NOT_FQ) == ZEND_NAME_NOT_FQ) {
+				const zval *zv = zend_ast_get_zval(ast);
+				if (Z_TYPE_P(zv) == IS_STRING
+						&& zend_generic_lookup_forward(Z_STR_P(zv)) >= 0) {
+					zend_error_noreturn(E_COMPILE_ERROR,
+						"Type parameter %s referenced before declaration",
+						Z_STRVAL_P(zv));
+				}
+			}
 			zend_string *name = zval_make_interned_string(zend_ast_get_zval(ast));
 			uint8_t code = zend_lookup_builtin_type_by_name(name);
 			if (code != 0) {
@@ -7656,6 +7717,15 @@ static zend_type zend_compile_single_typename(zend_ast *ast)
 	{
 		zend_generic_parameter *param = zend_generic_lookup_name(ast);
 		if (param) {
+			for (zend_generic_scope_entry *e = CG(generic_scope); e; e = e->outer) {
+				if (e->self_compiling == param) {
+					zend_string *self = zend_string_copy(param->name);
+					zend_error_noreturn(E_COMPILE_ERROR,
+						"Type parameter %s cannot reference itself in its own bound or default outside of a generic type argument",
+						ZSTR_VAL(self));
+				}
+			}
+
 			if (ZEND_TYPE_IS_SET(param->bound)) {
 				zend_type result = param->bound;
 				if (ZEND_TYPE_HAS_NAME(result)) {
@@ -7676,6 +7746,17 @@ static zend_type zend_compile_single_typename(zend_ast *ast)
 			}
 
 			return (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_ANY);
+		}
+
+		if (ast->kind == ZEND_AST_ZVAL
+				&& (ast->attr & ZEND_NAME_NOT_FQ) == ZEND_NAME_NOT_FQ) {
+			const zval *zv = zend_ast_get_zval(ast);
+			if (Z_TYPE_P(zv) == IS_STRING
+					&& zend_generic_lookup_forward(Z_STR_P(zv)) >= 0) {
+				zend_error_noreturn(E_COMPILE_ERROR,
+					"Type parameter %s referenced before declaration",
+					Z_STRVAL_P(zv));
+			}
 		}
 	}
 	if (ast->kind == ZEND_AST_TYPE) {

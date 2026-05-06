@@ -149,7 +149,9 @@ ZEND_API zend_generic_parameter_list *zend_generic_parameter_list_alloc(uint32_t
 		list->parameters[i].name = NULL;
 		list->parameters[i].variance = 0;
 		list->parameters[i].bound = (zend_type) ZEND_TYPE_INIT_NONE(0);
+		list->parameters[i].bound_pre_erasure = (zend_type) ZEND_TYPE_INIT_NONE(0);
 		list->parameters[i].default_type = (zend_type) ZEND_TYPE_INIT_NONE(0);
+		list->parameters[i].default_pre_erasure = (zend_type) ZEND_TYPE_INIT_NONE(0);
 	}
 	return list;
 }
@@ -164,7 +166,9 @@ ZEND_API void zend_generic_parameter_list_destroy(zend_generic_parameter_list *l
 			zend_string_release(param->name);
 		}
 		zend_type_release(param->bound, /* persistent */ false);
+		zend_type_release(param->bound_pre_erasure, /* persistent */ false);
 		zend_type_release(param->default_type, /* persistent */ false);
+		zend_type_release(param->default_pre_erasure, /* persistent */ false);
 	}
 	efree(list);
 }
