@@ -1,5 +1,5 @@
 /* This is a generated file, edit php_reflection.stub.php instead.
- * Stub hash: 8b6540b675d6f2ee88d367eaac0d9f3b06542e20
+ * Stub hash: feef30689275eadf505490ff386acfaba139fbaa
  * Has decl header: yes */
 
 ZEND_BEGIN_ARG_WITH_TENTATIVE_RETURN_TYPE_INFO_EX(arginfo_class_Reflection_getModifierNames, 0, 1, IS_ARRAY, 0)
@@ -374,6 +374,15 @@ ZEND_END_ARG_INFO()
 #define arginfo_class_ReflectionClass_isGeneric arginfo_class_ReflectionFunctionAbstract_hasTentativeReturnType
 
 #define arginfo_class_ReflectionClass_getGenericParameters arginfo_class_ReflectionFunctionAbstract_getClosureUsedVariables
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_ReflectionClass_getGenericArgumentsForParentClass, 0, 0, IS_ARRAY, 1)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_ReflectionClass_getGenericArgumentsForParentInterface, 0, 1, IS_ARRAY, 1)
+	ZEND_ARG_TYPE_INFO(0, name, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_ReflectionClass_getGenericArgumentsForUsedTrait arginfo_class_ReflectionClass_getGenericArgumentsForParentInterface
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_ReflectionObject___construct, 0, 0, 1)
 	ZEND_ARG_TYPE_INFO(0, object, IS_OBJECT, 0)
@@ -914,6 +923,9 @@ ZEND_METHOD(ReflectionClass, getShortName);
 ZEND_METHOD(ReflectionClass, getAttributes);
 ZEND_METHOD(ReflectionClass, isGeneric);
 ZEND_METHOD(ReflectionClass, getGenericParameters);
+ZEND_METHOD(ReflectionClass, getGenericArgumentsForParentClass);
+ZEND_METHOD(ReflectionClass, getGenericArgumentsForParentInterface);
+ZEND_METHOD(ReflectionClass, getGenericArgumentsForUsedTrait);
 ZEND_METHOD(ReflectionObject, __construct);
 ZEND_METHOD(ReflectionProperty, __construct);
 ZEND_METHOD(ReflectionProperty, __toString);
@@ -1233,6 +1245,9 @@ static const zend_function_entry class_ReflectionClass_methods[] = {
 	ZEND_ME(ReflectionClass, getAttributes, arginfo_class_ReflectionClass_getAttributes, ZEND_ACC_PUBLIC)
 	ZEND_ME(ReflectionClass, isGeneric, arginfo_class_ReflectionClass_isGeneric, ZEND_ACC_PUBLIC)
 	ZEND_ME(ReflectionClass, getGenericParameters, arginfo_class_ReflectionClass_getGenericParameters, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionClass, getGenericArgumentsForParentClass, arginfo_class_ReflectionClass_getGenericArgumentsForParentClass, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionClass, getGenericArgumentsForParentInterface, arginfo_class_ReflectionClass_getGenericArgumentsForParentInterface, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionClass, getGenericArgumentsForUsedTrait, arginfo_class_ReflectionClass_getGenericArgumentsForUsedTrait, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 

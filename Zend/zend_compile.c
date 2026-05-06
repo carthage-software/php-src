@@ -9872,15 +9872,24 @@ static void zend_compile_use_trait(const zend_ast *ast) /* {{{ */
 		zend_ast *trait_ast = traits->child[i];
 
 		if (ce->ce_flags & ZEND_ACC_INTERFACE) {
-			zend_string *name = zend_ast_get_str(trait_ast);
+			zend_string *name = trait_ast->kind == ZEND_AST_GENERIC_NAMED_TYPE
+				? zend_ast_get_str(trait_ast->child[0])
+				: zend_ast_get_str(trait_ast);
 			zend_error_noreturn(E_COMPILE_ERROR, "Cannot use traits inside of interfaces. "
 				"%s is used in %s", ZSTR_VAL(name), ZSTR_VAL(ce->name));
 		}
 
-		ce->trait_names[ce->num_traits].name =
+		uint32_t trait_index = ce->num_traits;
+		ce->trait_names[trait_index].name =
 			zend_resolve_const_class_name_reference(trait_ast, "trait name");
-		ce->trait_names[ce->num_traits].lc_name = zend_string_tolower(ce->trait_names[ce->num_traits].name);
+		ce->trait_names[trait_index].lc_name = zend_string_tolower(ce->trait_names[trait_index].name);
 		ce->num_traits++;
+
+		if (trait_ast->kind == ZEND_AST_GENERIC_NAMED_TYPE) {
+			zend_type pre = zend_compile_pre_erasure_typename(trait_ast);
+			zend_generic_type_table_set_trait_use(
+				zend_generic_get_or_create_class_table(ce), trait_index, pre);
+		}
 	}
 
 	if (!adaptations) {
@@ -9916,6 +9925,12 @@ static void zend_compile_implements(zend_ast *ast) /* {{{ */
 		interface_names[i].name =
 			zend_resolve_const_class_name_reference(class_ast, "interface name");
 		interface_names[i].lc_name = zend_string_tolower(interface_names[i].name);
+
+		if (class_ast->kind == ZEND_AST_GENERIC_NAMED_TYPE) {
+			zend_type pre = zend_compile_pre_erasure_typename(class_ast);
+			zend_generic_type_table_set_implements(
+				zend_generic_get_or_create_class_table(ce), i, pre);
+		}
 	}
 
 	ce->num_interfaces = list->children;
@@ -10055,6 +10070,15 @@ static void zend_compile_class_decl(znode *result, const zend_ast *ast, bool top
 	if (extends_ast) {
 		ce->parent_name =
 			zend_resolve_const_class_name_reference(extends_ast, "class name");
+		/* Capture the pre-erasure type when the extends clause specifies type
+		 * arguments (e.g. `extends Box<int>`). For an interface declaration
+		 * this AST holds the list of parent interfaces; for class/trait it's
+		 * the single parent class. */
+		if (extends_ast->kind == ZEND_AST_GENERIC_NAMED_TYPE) {
+			zend_type pre = zend_compile_pre_erasure_typename(extends_ast);
+			zend_generic_type_table_set_extends(
+				zend_generic_get_or_create_class_table(ce), pre);
+		}
 	}
 
 	CG(active_class_entry) = ce;

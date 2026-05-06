@@ -1,8 +1,8 @@
 /* This is a generated file, edit php_reflection.stub.php instead.
- * Stub hash: 8b6540b675d6f2ee88d367eaac0d9f3b06542e20 */
+ * Stub hash: feef30689275eadf505490ff386acfaba139fbaa */
 
-#ifndef ZEND_PHP_REFLECTION_DECL_8b6540b675d6f2ee88d367eaac0d9f3b06542e20_H
-#define ZEND_PHP_REFLECTION_DECL_8b6540b675d6f2ee88d367eaac0d9f3b06542e20_H
+#ifndef ZEND_PHP_REFLECTION_DECL_feef30689275eadf505490ff386acfaba139fbaa_H
+#define ZEND_PHP_REFLECTION_DECL_feef30689275eadf505490ff386acfaba139fbaa_H
 
 typedef enum zend_enum_PropertyHookType {
 	ZEND_ENUM_PropertyHookType_Get = 1,
@@ -15,4 +15,4 @@ typedef enum zend_enum_ReflectionGenericVariance {
 	ZEND_ENUM_ReflectionGenericVariance_Contravariant = 3,
 } zend_enum_ReflectionGenericVariance;
 
-#endif /* ZEND_PHP_REFLECTION_DECL_8b6540b675d6f2ee88d367eaac0d9f3b06542e20_H */
+#endif /* ZEND_PHP_REFLECTION_DECL_feef30689275eadf505490ff386acfaba139fbaa_H */

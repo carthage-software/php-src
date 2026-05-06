@@ -353,6 +353,14 @@ PHP 8.6 UPGRADE NOTES
     ReflectionFunction, ReflectionMethod, closures, and arrow functions).
   . Added ReflectionClass::isGeneric() and
     ReflectionClass::getGenericParameters().
+  . Added ReflectionClass::getGenericArgumentsForParentClass(),
+    ReflectionClass::getGenericArgumentsForParentInterface(string $name),
+    and ReflectionClass::getGenericArgumentsForUsedTrait(string $name) for
+    inspecting the type arguments supplied at a class's own extends /
+    implements / use sites. Returns null when no type arguments were
+    specified for that ancestor at this class's clause site (consumers
+    enumerate ancestors via the existing getParentClass() / getInterfaces()
+    / getTraits() APIs).
   . Added ReflectionNamedType::hasGenericArguments() and
     ReflectionNamedType::getGenericArguments(). The arguments are returned
     as ReflectionType instances in source order (pre-erasure form);

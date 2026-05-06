@@ -446,6 +446,35 @@ class ReflectionClass implements Reflector
 
     /** @return list<ReflectionGenericTypeParameter> */
     public function getGenericParameters(): array {}
+
+    /**
+     * Returns the type arguments this class supplies at the parent-class extends
+     * site, in source order. Returns null if there is no parent class, or if
+     * the extends clause specified no type arguments.
+     *
+     * @return list<ReflectionType>|null
+     */
+    public function getGenericArgumentsForParentClass(): ?array {}
+
+    /**
+     * Returns the type arguments this class supplies for the named parent
+     * interface (a directly-listed `implements` entry, or, for an interface
+     * declaration, a directly-listed `extends` entry), in source order.
+     * Returns null if $name is not a directly-listed parent interface, or if
+     * no type arguments were specified at the use site.
+     *
+     * @return list<ReflectionType>|null
+     */
+    public function getGenericArgumentsForParentInterface(string $name): ?array {}
+
+    /**
+     * Returns the type arguments this class supplies at the use site for trait
+     * $name, in source order. Returns null if $name is not a directly-used
+     * trait, or if no type arguments were specified at the use site.
+     *
+     * @return list<ReflectionType>|null
+     */
+    public function getGenericArgumentsForUsedTrait(string $name): ?array {}
 }
 
 class ReflectionObject extends ReflectionClass
