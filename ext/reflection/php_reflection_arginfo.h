@@ -1,5 +1,5 @@
 /* This is a generated file, edit php_reflection.stub.php instead.
- * Stub hash: c80946cc8c8215bb6527e09bb71b3a97a76a6a98
+ * Stub hash: 8b6540b675d6f2ee88d367eaac0d9f3b06542e20
  * Has decl header: yes */
 
 ZEND_BEGIN_ARG_WITH_TENTATIVE_RETURN_TYPE_INFO_EX(arginfo_class_Reflection_getModifierNames, 0, 1, IS_ARRAY, 0)
@@ -86,6 +86,10 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_ReflectionFunctionAbstract
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, name, IS_STRING, 1, "null")
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, flags, IS_LONG, 0, "0")
 ZEND_END_ARG_INFO()
+
+#define arginfo_class_ReflectionFunctionAbstract_isGeneric arginfo_class_ReflectionFunctionAbstract_hasTentativeReturnType
+
+#define arginfo_class_ReflectionFunctionAbstract_getGenericParameters arginfo_class_ReflectionFunctionAbstract_getClosureUsedVariables
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_ReflectionFunction___construct, 0, 0, 1)
 	ZEND_ARG_OBJ_TYPE_MASK(0, function, Closure, MAY_BE_STRING, NULL)
@@ -367,6 +371,10 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_ReflectionClass_getAttributes arginfo_class_ReflectionFunctionAbstract_getAttributes
 
+#define arginfo_class_ReflectionClass_isGeneric arginfo_class_ReflectionFunctionAbstract_hasTentativeReturnType
+
+#define arginfo_class_ReflectionClass_getGenericParameters arginfo_class_ReflectionFunctionAbstract_getClosureUsedVariables
+
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_ReflectionObject___construct, 0, 0, 1)
 	ZEND_ARG_TYPE_INFO(0, object, IS_OBJECT, 0)
 ZEND_END_ARG_INFO()
@@ -581,9 +589,49 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_ReflectionNamedType_isBuiltin arginfo_class_ReflectionFunctionAbstract_inNamespace
 
+#define arginfo_class_ReflectionNamedType_hasGenericArguments arginfo_class_ReflectionFunctionAbstract_hasTentativeReturnType
+
+#define arginfo_class_ReflectionNamedType_getGenericArguments arginfo_class_ReflectionFunctionAbstract_getClosureUsedVariables
+
 #define arginfo_class_ReflectionUnionType_getTypes arginfo_class_ReflectionFunctionAbstract_getClosureUsedVariables
 
 #define arginfo_class_ReflectionIntersectionType_getTypes arginfo_class_ReflectionFunctionAbstract_getClosureUsedVariables
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_class_ReflectionTypeParameterReference___construct, 0, 0, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_ReflectionTypeParameterReference_getName arginfo_class_ReflectionFunction___toString
+
+ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_class_ReflectionTypeParameterReference_getTypeParameter, 0, 0, ReflectionGenericTypeParameter, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_ReflectionTypeParameterReference_allowsNull arginfo_class_ReflectionFunctionAbstract_hasTentativeReturnType
+
+#define arginfo_class_ReflectionTypeParameterReference___toString arginfo_class_ReflectionFunction___toString
+
+#define arginfo_class_ReflectionGenericTypeParameter___construct arginfo_class_ReflectionTypeParameterReference___construct
+
+#define arginfo_class_ReflectionGenericTypeParameter___clone arginfo_class_ReflectionFunctionAbstract___clone
+
+#define arginfo_class_ReflectionGenericTypeParameter_getName arginfo_class_ReflectionFunction___toString
+
+#define arginfo_class_ReflectionGenericTypeParameter_getPosition arginfo_class_ReflectionGenerator_getExecutingLine
+
+ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_class_ReflectionGenericTypeParameter_getVariance, 0, 0, ReflectionGenericVariance, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_ReflectionGenericTypeParameter_hasBound arginfo_class_ReflectionFunctionAbstract_hasTentativeReturnType
+
+#define arginfo_class_ReflectionGenericTypeParameter_getBound arginfo_class_ReflectionFunctionAbstract_getTentativeReturnType
+
+#define arginfo_class_ReflectionGenericTypeParameter_hasDefault arginfo_class_ReflectionFunctionAbstract_hasTentativeReturnType
+
+#define arginfo_class_ReflectionGenericTypeParameter_getDefault arginfo_class_ReflectionFunctionAbstract_getTentativeReturnType
+
+ZEND_BEGIN_ARG_WITH_RETURN_OBJ_TYPE_MASK_EX(arginfo_class_ReflectionGenericTypeParameter_getDeclaringEntity, 0, 0, ReflectionClass|ReflectionFunctionAbstract, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_ReflectionGenericTypeParameter___toString arginfo_class_ReflectionFunction___toString
 
 #define arginfo_class_ReflectionExtension___clone arginfo_class_ReflectionFunctionAbstract___clone
 
@@ -641,8 +689,7 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_ReflectionReference___clone arginfo_class_ReflectionFunctionAbstract___clone
 
-ZEND_BEGIN_ARG_INFO_EX(arginfo_class_ReflectionReference___construct, 0, 0, 0)
-ZEND_END_ARG_INFO()
+#define arginfo_class_ReflectionReference___construct arginfo_class_ReflectionTypeParameterReference___construct
 
 #define arginfo_class_ReflectionAttribute_getName arginfo_class_ReflectionFunction___toString
 
@@ -659,7 +706,7 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_ReflectionAttribute___clone arginfo_class_ReflectionFunctionAbstract___clone
 
-#define arginfo_class_ReflectionAttribute___construct arginfo_class_ReflectionReference___construct
+#define arginfo_class_ReflectionAttribute___construct arginfo_class_ReflectionTypeParameterReference___construct
 
 #define arginfo_class_ReflectionEnum___construct arginfo_class_ReflectionClass___construct
 
@@ -768,6 +815,8 @@ ZEND_METHOD(ReflectionFunctionAbstract, getReturnType);
 ZEND_METHOD(ReflectionFunctionAbstract, hasTentativeReturnType);
 ZEND_METHOD(ReflectionFunctionAbstract, getTentativeReturnType);
 ZEND_METHOD(ReflectionFunctionAbstract, getAttributes);
+ZEND_METHOD(ReflectionFunctionAbstract, isGeneric);
+ZEND_METHOD(ReflectionFunctionAbstract, getGenericParameters);
 ZEND_METHOD(ReflectionFunction, __construct);
 ZEND_METHOD(ReflectionFunction, __toString);
 ZEND_METHOD(ReflectionFunction, isAnonymous);
@@ -863,6 +912,8 @@ ZEND_METHOD(ReflectionClass, inNamespace);
 ZEND_METHOD(ReflectionClass, getNamespaceName);
 ZEND_METHOD(ReflectionClass, getShortName);
 ZEND_METHOD(ReflectionClass, getAttributes);
+ZEND_METHOD(ReflectionClass, isGeneric);
+ZEND_METHOD(ReflectionClass, getGenericParameters);
 ZEND_METHOD(ReflectionObject, __construct);
 ZEND_METHOD(ReflectionProperty, __construct);
 ZEND_METHOD(ReflectionProperty, __toString);
@@ -948,8 +999,25 @@ ZEND_METHOD(ReflectionType, allowsNull);
 ZEND_METHOD(ReflectionType, __toString);
 ZEND_METHOD(ReflectionNamedType, getName);
 ZEND_METHOD(ReflectionNamedType, isBuiltin);
+ZEND_METHOD(ReflectionNamedType, hasGenericArguments);
+ZEND_METHOD(ReflectionNamedType, getGenericArguments);
 ZEND_METHOD(ReflectionUnionType, getTypes);
 ZEND_METHOD(ReflectionIntersectionType, getTypes);
+ZEND_METHOD(ReflectionTypeParameterReference, __construct);
+ZEND_METHOD(ReflectionTypeParameterReference, getName);
+ZEND_METHOD(ReflectionTypeParameterReference, getTypeParameter);
+ZEND_METHOD(ReflectionTypeParameterReference, allowsNull);
+ZEND_METHOD(ReflectionTypeParameterReference, __toString);
+ZEND_METHOD(ReflectionGenericTypeParameter, __construct);
+ZEND_METHOD(ReflectionGenericTypeParameter, getName);
+ZEND_METHOD(ReflectionGenericTypeParameter, getPosition);
+ZEND_METHOD(ReflectionGenericTypeParameter, getVariance);
+ZEND_METHOD(ReflectionGenericTypeParameter, hasBound);
+ZEND_METHOD(ReflectionGenericTypeParameter, getBound);
+ZEND_METHOD(ReflectionGenericTypeParameter, hasDefault);
+ZEND_METHOD(ReflectionGenericTypeParameter, getDefault);
+ZEND_METHOD(ReflectionGenericTypeParameter, getDeclaringEntity);
+ZEND_METHOD(ReflectionGenericTypeParameter, __toString);
 ZEND_METHOD(ReflectionExtension, __construct);
 ZEND_METHOD(ReflectionExtension, __toString);
 ZEND_METHOD(ReflectionExtension, getName);
@@ -1048,6 +1116,8 @@ static const zend_function_entry class_ReflectionFunctionAbstract_methods[] = {
 	ZEND_ME(ReflectionFunctionAbstract, hasTentativeReturnType, arginfo_class_ReflectionFunctionAbstract_hasTentativeReturnType, ZEND_ACC_PUBLIC)
 	ZEND_ME(ReflectionFunctionAbstract, getTentativeReturnType, arginfo_class_ReflectionFunctionAbstract_getTentativeReturnType, ZEND_ACC_PUBLIC)
 	ZEND_ME(ReflectionFunctionAbstract, getAttributes, arginfo_class_ReflectionFunctionAbstract_getAttributes, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionFunctionAbstract, isGeneric, arginfo_class_ReflectionFunctionAbstract_isGeneric, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionFunctionAbstract, getGenericParameters, arginfo_class_ReflectionFunctionAbstract_getGenericParameters, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -1161,6 +1231,8 @@ static const zend_function_entry class_ReflectionClass_methods[] = {
 	ZEND_ME(ReflectionClass, getNamespaceName, arginfo_class_ReflectionClass_getNamespaceName, ZEND_ACC_PUBLIC)
 	ZEND_ME(ReflectionClass, getShortName, arginfo_class_ReflectionClass_getShortName, ZEND_ACC_PUBLIC)
 	ZEND_ME(ReflectionClass, getAttributes, arginfo_class_ReflectionClass_getAttributes, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionClass, isGeneric, arginfo_class_ReflectionClass_isGeneric, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionClass, getGenericParameters, arginfo_class_ReflectionClass_getGenericParameters, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -1274,6 +1346,8 @@ static const zend_function_entry class_ReflectionType_methods[] = {
 static const zend_function_entry class_ReflectionNamedType_methods[] = {
 	ZEND_ME(ReflectionNamedType, getName, arginfo_class_ReflectionNamedType_getName, ZEND_ACC_PUBLIC)
 	ZEND_ME(ReflectionNamedType, isBuiltin, arginfo_class_ReflectionNamedType_isBuiltin, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionNamedType, hasGenericArguments, arginfo_class_ReflectionNamedType_hasGenericArguments, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionNamedType, getGenericArguments, arginfo_class_ReflectionNamedType_getGenericArguments, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -1284,6 +1358,30 @@ static const zend_function_entry class_ReflectionUnionType_methods[] = {
 
 static const zend_function_entry class_ReflectionIntersectionType_methods[] = {
 	ZEND_ME(ReflectionIntersectionType, getTypes, arginfo_class_ReflectionIntersectionType_getTypes, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_ReflectionTypeParameterReference_methods[] = {
+	ZEND_ME(ReflectionTypeParameterReference, __construct, arginfo_class_ReflectionTypeParameterReference___construct, ZEND_ACC_PRIVATE)
+	ZEND_ME(ReflectionTypeParameterReference, getName, arginfo_class_ReflectionTypeParameterReference_getName, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionTypeParameterReference, getTypeParameter, arginfo_class_ReflectionTypeParameterReference_getTypeParameter, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionTypeParameterReference, allowsNull, arginfo_class_ReflectionTypeParameterReference_allowsNull, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionTypeParameterReference, __toString, arginfo_class_ReflectionTypeParameterReference___toString, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_ReflectionGenericTypeParameter_methods[] = {
+	ZEND_ME(ReflectionGenericTypeParameter, __construct, arginfo_class_ReflectionGenericTypeParameter___construct, ZEND_ACC_PRIVATE)
+	ZEND_RAW_FENTRY("__clone", zim_ReflectionClass___clone, arginfo_class_ReflectionGenericTypeParameter___clone, ZEND_ACC_PRIVATE, NULL, NULL)
+	ZEND_ME(ReflectionGenericTypeParameter, getName, arginfo_class_ReflectionGenericTypeParameter_getName, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionGenericTypeParameter, getPosition, arginfo_class_ReflectionGenericTypeParameter_getPosition, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionGenericTypeParameter, getVariance, arginfo_class_ReflectionGenericTypeParameter_getVariance, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionGenericTypeParameter, hasBound, arginfo_class_ReflectionGenericTypeParameter_hasBound, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionGenericTypeParameter, getBound, arginfo_class_ReflectionGenericTypeParameter_getBound, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionGenericTypeParameter, hasDefault, arginfo_class_ReflectionGenericTypeParameter_hasDefault, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionGenericTypeParameter, getDefault, arginfo_class_ReflectionGenericTypeParameter_getDefault, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionGenericTypeParameter, getDeclaringEntity, arginfo_class_ReflectionGenericTypeParameter_getDeclaringEntity, ZEND_ACC_PUBLIC)
+	ZEND_ME(ReflectionGenericTypeParameter, __toString, arginfo_class_ReflectionGenericTypeParameter___toString, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -1804,6 +1902,54 @@ static zend_class_entry *register_class_ReflectionIntersectionType(zend_class_en
 
 	INIT_CLASS_ENTRY(ce, "ReflectionIntersectionType", class_ReflectionIntersectionType_methods);
 	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_ReflectionType, 0);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_ReflectionTypeParameterReference(zend_class_entry *class_entry_ReflectionType)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_CLASS_ENTRY(ce, "ReflectionTypeParameterReference", class_ReflectionTypeParameterReference_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_ReflectionType, ZEND_ACC_FINAL|ZEND_ACC_NO_DYNAMIC_PROPERTIES|ZEND_ACC_NOT_SERIALIZABLE);
+
+	zval property_name_default_value;
+	ZVAL_UNDEF(&property_name_default_value);
+	zend_declare_typed_property(class_entry, ZSTR_KNOWN(ZEND_STR_NAME), &property_name_default_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_STRING));
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_ReflectionGenericVariance(void)
+{
+	zend_class_entry *class_entry = zend_register_internal_enum("ReflectionGenericVariance", IS_LONG, NULL);
+
+	zval enum_case_Invariant_value;
+	ZVAL_LONG(&enum_case_Invariant_value, 0);
+	zend_enum_add_case_cstr(class_entry, "Invariant", &enum_case_Invariant_value);
+
+	zval enum_case_Covariant_value;
+	ZVAL_LONG(&enum_case_Covariant_value, 1);
+	zend_enum_add_case_cstr(class_entry, "Covariant", &enum_case_Covariant_value);
+
+	zval enum_case_Contravariant_value;
+	ZVAL_LONG(&enum_case_Contravariant_value, 2);
+	zend_enum_add_case_cstr(class_entry, "Contravariant", &enum_case_Contravariant_value);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_ReflectionGenericTypeParameter(zend_class_entry *class_entry_Reflector)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_CLASS_ENTRY(ce, "ReflectionGenericTypeParameter", class_ReflectionGenericTypeParameter_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, NULL, ZEND_ACC_FINAL|ZEND_ACC_NO_DYNAMIC_PROPERTIES|ZEND_ACC_NOT_SERIALIZABLE);
+	zend_class_implements(class_entry, 1, class_entry_Reflector);
+
+	zval property_name_default_value;
+	ZVAL_UNDEF(&property_name_default_value);
+	zend_declare_typed_property(class_entry, ZSTR_KNOWN(ZEND_STR_NAME), &property_name_default_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_STRING));
 
 	return class_entry;
 }

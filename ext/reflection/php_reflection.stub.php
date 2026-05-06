@@ -115,6 +115,11 @@ abstract class ReflectionFunctionAbstract implements Reflector
     public function getTentativeReturnType(): ?ReflectionType {}
 
     public function getAttributes(?string $name = null, int $flags = 0): array {}
+
+    public function isGeneric(): bool {}
+
+    /** @return list<ReflectionGenericTypeParameter> */
+    public function getGenericParameters(): array {}
 }
 
 class ReflectionFunction extends ReflectionFunctionAbstract
@@ -436,6 +441,11 @@ class ReflectionClass implements Reflector
     public function getShortName(): string {}
 
     public function getAttributes(?string $name = null, int $flags = 0): array {}
+
+    public function isGeneric(): bool {}
+
+    /** @return list<ReflectionGenericTypeParameter> */
+    public function getGenericParameters(): array {}
 }
 
 class ReflectionObject extends ReflectionClass
@@ -741,6 +751,11 @@ class ReflectionNamedType extends ReflectionType
 
     /** @tentative-return-type */
     public function isBuiltin(): bool {}
+
+    public function hasGenericArguments(): bool {}
+
+    /** @return list<ReflectionType> */
+    public function getGenericArguments(): array {}
 }
 
 class ReflectionUnionType extends ReflectionType
@@ -751,6 +766,64 @@ class ReflectionUnionType extends ReflectionType
 class ReflectionIntersectionType extends ReflectionType
 {
     public function getTypes(): array {}
+}
+
+/**
+ * @strict-properties
+ * @not-serializable
+ */
+final class ReflectionTypeParameterReference extends ReflectionType
+{
+    public string $name;
+
+    private function __construct() {}
+
+    public function getName(): string {}
+
+    public function getTypeParameter(): ReflectionGenericTypeParameter {}
+
+    public function allowsNull(): bool {}
+
+    public function __toString(): string {}
+}
+
+enum ReflectionGenericVariance: int
+{
+    case Invariant     = 0;
+    case Covariant     = 1;
+    case Contravariant = 2;
+}
+
+/**
+ * @strict-properties
+ * @not-serializable
+ */
+final class ReflectionGenericTypeParameter implements Reflector
+{
+    public string $name;
+
+    private function __construct() {}
+
+    /** @implementation-alias ReflectionClass::__clone */
+    private function __clone(): void {}
+
+    public function getName(): string {}
+
+    public function getPosition(): int {}
+
+    public function getVariance(): ReflectionGenericVariance {}
+
+    public function hasBound(): bool {}
+
+    public function getBound(): ?ReflectionType {}
+
+    public function hasDefault(): bool {}
+
+    public function getDefault(): ?ReflectionType {}
+
+    public function getDeclaringEntity(): ReflectionClass|ReflectionFunctionAbstract {}
+
+    public function __toString(): string {}
 }
 
 /** @not-serializable */
