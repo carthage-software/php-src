@@ -121,9 +121,20 @@ typedef struct _zend_file_context {
 	HashTable seen_symbols;
 } zend_file_context;
 
+C23_ENUM(zend_generic_variance, uint8_t) {
+	ZEND_GENERIC_VARIANCE_INVARIANT     = 0,
+	ZEND_GENERIC_VARIANCE_COVARIANT     = 1,
+	ZEND_GENERIC_VARIANCE_CONTRAVARIANT = 2,
+};
+
+C23_ENUM(zend_generic_origin, uint8_t) {
+	ZEND_GENERIC_ORIGIN_CLASS_LIKE    = 0, /* class, interface, trait, enum */
+	ZEND_GENERIC_ORIGIN_FUNCTION_LIKE = 1, /* function, method, closure, arrow function */
+};
+
 typedef struct _zend_generic_parameter {
 	zend_string *name;        		/* type-parameter name */
-	uint8_t variance;         		/* 0=invariant, 1=covariant, 2=contravariant */
+	zend_generic_variance variance;
 	zend_type bound;          		/* runtime erased; ZEND_TYPE_NONE if unbounded */
 	zend_type bound_pre_erasure;   	/* pre-erasure; ZEND_TYPE_NONE if same as `bound` */
 	zend_type default_type;   		/* runtime erased; ZEND_TYPE_NONE if no default */
@@ -154,7 +165,7 @@ typedef struct _zend_generic_scope_entry {
 	uint32_t visible_count; 						/* number of parameters in `params` already declared */
 	struct _zend_generic_parameter *self_compiling; /* param whose bound/default is being compiled, or NULL */
 	HashTable *shadowing_classes;                   /* lc_names of class-likes declared inside this scope; lazy-allocated */
-	uint8_t origin;  								/* 0 = class/interface/trait, 1 = function/method/closure/arrow-fn */
+	zend_generic_origin origin;
 	struct _zend_generic_scope_entry *outer;
 } zend_generic_scope_entry;
 

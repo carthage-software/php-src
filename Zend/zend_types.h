@@ -131,7 +131,7 @@ typedef struct {
 typedef struct _zend_type_parameter_ref {
 	zend_string *name;       /* type-parameter source name (e.g. "T") */
 	uint32_t     index;      /* position in declaring entity's parameter list */
-	uint8_t      origin;     /* 0 = class, 1 = function/method/closure/arrow-fn */
+	uint8_t      origin;     /* one of zend_generic_origin (see zend_compile.h) */
 } zend_type_parameter_ref;
 
 /* List of pre-erasure type arguments attached to a named pre-erasure zend_type. */
