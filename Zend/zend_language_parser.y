@@ -943,7 +943,9 @@ type_expr:
 
 type:
 		type_without_static	{ $$ = $1; }
-	|	T_STATIC			{ $$ = zend_ast_create_ex(ZEND_AST_TYPE, IS_STATIC); }
+	|	T_STATIC optional_generic_type_argument_list
+			{ zend_ast *bare = zend_ast_create_ex(ZEND_AST_TYPE, IS_STATIC);
+			  $$ = $2 ? zend_ast_create(ZEND_AST_GENERIC_NAMED_TYPE, bare, $2) : bare; }
 ;
 
 union_type_element:
@@ -974,7 +976,9 @@ type_expr_without_static:
 ;
 
 type_without_static:
-		T_ARRAY		{ $$ = zend_ast_create_ex(ZEND_AST_TYPE, IS_ARRAY); }
+		T_ARRAY optional_generic_type_argument_list
+			{ zend_ast *bare = zend_ast_create_ex(ZEND_AST_TYPE, IS_ARRAY);
+			  $$ = $2 ? zend_ast_create(ZEND_AST_GENERIC_NAMED_TYPE, bare, $2) : bare; }
 	|	T_CALLABLE	{ $$ = zend_ast_create_ex(ZEND_AST_TYPE, IS_CALLABLE); }
 	|	name optional_generic_type_argument_list
 			{ $$ = $2 ? zend_ast_create(ZEND_AST_GENERIC_NAMED_TYPE, $1, $2) : $1; }
