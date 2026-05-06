@@ -1,5 +1,5 @@
 --TEST--
-Reflection: getGenericArgumentsForParentClass returns args from extends clause
+Reflection: getGenericArgumentsForParentClass returns args from extends clause, throws when no parent
 --FILE--
 <?php
 class A<T> {}
@@ -12,15 +12,20 @@ class Multi extends B<int, float> {}
 
 $cases = [
     'WithArgs' => ['string'],
-    'NoArgs'   => null,
-    'NoParent' => null,
+    'NoArgs'   => [],
+    'NoParent' => 'throw',
     'Multi'    => ['int', 'float'],
 ];
 
 foreach ($cases as $cls => $want) {
-    $args = (new ReflectionClass($cls))->getGenericArgumentsForParentClass();
-    if ($want === null) {
-        echo $cls, ": ", $args === null ? "null OK" : "FAIL (got non-null)", "\n";
+    try {
+        $args = (new ReflectionClass($cls))->getGenericArgumentsForParentClass();
+    } catch (ReflectionException $e) {
+        echo $cls, ": ", $want === 'throw' ? "throw OK ({$e->getMessage()})" : "FAIL (unexpected throw)", "\n";
+        continue;
+    }
+    if ($want === 'throw') {
+        echo $cls, ": FAIL (expected throw)\n";
     } else {
         $got = array_map(fn($t) => $t->getName(), $args);
         echo $cls, ": ", $got === $want ? "OK" : ("FAIL got " . implode(",", $got)), "\n";
@@ -29,6 +34,6 @@ foreach ($cases as $cls => $want) {
 ?>
 --EXPECT--
 WithArgs: OK
-NoArgs: null OK
-NoParent: null OK
+NoArgs: OK
+NoParent: throw OK (Class NoParent has no parent class)
 Multi: OK

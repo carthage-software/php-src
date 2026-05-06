@@ -1,5 +1,5 @@
 /* This is a generated file, edit php_reflection.stub.php instead.
- * Stub hash: feef30689275eadf505490ff386acfaba139fbaa
+ * Stub hash: 3285061ba15d3312182782cace0c79f42915c7d6
  * Has decl header: yes */
 
 ZEND_BEGIN_ARG_WITH_TENTATIVE_RETURN_TYPE_INFO_EX(arginfo_class_Reflection_getModifierNames, 0, 1, IS_ARRAY, 0)
@@ -375,10 +375,9 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_ReflectionClass_getGenericParameters arginfo_class_ReflectionFunctionAbstract_getClosureUsedVariables
 
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_ReflectionClass_getGenericArgumentsForParentClass, 0, 0, IS_ARRAY, 1)
-ZEND_END_ARG_INFO()
+#define arginfo_class_ReflectionClass_getGenericArgumentsForParentClass arginfo_class_ReflectionFunctionAbstract_getClosureUsedVariables
 
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_ReflectionClass_getGenericArgumentsForParentInterface, 0, 1, IS_ARRAY, 1)
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_ReflectionClass_getGenericArgumentsForParentInterface, 0, 1, IS_ARRAY, 0)
 	ZEND_ARG_TYPE_INFO(0, name, IS_STRING, 0)
 ZEND_END_ARG_INFO()
 
@@ -631,11 +630,12 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_ReflectionGenericTypeParameter_hasBound arginfo_class_ReflectionFunctionAbstract_hasTentativeReturnType
 
-#define arginfo_class_ReflectionGenericTypeParameter_getBound arginfo_class_ReflectionFunctionAbstract_getTentativeReturnType
+ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_class_ReflectionGenericTypeParameter_getBound, 0, 0, ReflectionType, 0)
+ZEND_END_ARG_INFO()
 
 #define arginfo_class_ReflectionGenericTypeParameter_hasDefault arginfo_class_ReflectionFunctionAbstract_hasTentativeReturnType
 
-#define arginfo_class_ReflectionGenericTypeParameter_getDefault arginfo_class_ReflectionFunctionAbstract_getTentativeReturnType
+#define arginfo_class_ReflectionGenericTypeParameter_getDefault arginfo_class_ReflectionGenericTypeParameter_getBound
 
 ZEND_BEGIN_ARG_WITH_RETURN_OBJ_TYPE_MASK_EX(arginfo_class_ReflectionGenericTypeParameter_getDeclaringEntity, 0, 0, ReflectionClass|ReflectionFunctionAbstract, 0)
 ZEND_END_ARG_INFO()
