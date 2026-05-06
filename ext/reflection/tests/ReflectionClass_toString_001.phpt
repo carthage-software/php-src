@@ -30,7 +30,7 @@ Class [ <internal:Reflection> class ReflectionClass implements Stringable, Refle
     Property [ public string $name ]
   }
 
-  - Methods [66] {
+  - Methods [69] {
     Method [ <internal:Reflection> private method __clone ] {
 
       - Parameters [0] {
@@ -527,6 +527,29 @@ Class [ <internal:Reflection> class ReflectionClass implements Stringable, Refle
       - Parameters [0] {
       }
       - Return [ array ]
+    }
+
+    Method [ <internal:Reflection> public method getGenericArgumentsForParentClass ] {
+
+      - Parameters [0] {
+      }
+      - Return [ ?array ]
+    }
+
+    Method [ <internal:Reflection> public method getGenericArgumentsForParentInterface ] {
+
+      - Parameters [1] {
+        Parameter #0 [ <required> string $name ]
+      }
+      - Return [ ?array ]
+    }
+
+    Method [ <internal:Reflection> public method getGenericArgumentsForUsedTrait ] {
+
+      - Parameters [1] {
+        Parameter #0 [ <required> string $name ]
+      }
+      - Return [ ?array ]
     }
   }
 }

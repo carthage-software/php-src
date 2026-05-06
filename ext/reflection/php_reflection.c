@@ -8665,6 +8665,97 @@ ZEND_METHOD(ReflectionNamedType, getGenericArguments)
 	}
 }
 
+static void reflection_build_named_args_list(zval *return_value, const zend_type *boxed,
+		zend_class_entry *declaring_class)
+{
+	if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) {
+		RETURN_NULL();
+	}
+
+	zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
+	array_init_size(return_value, named->count);
+	for (uint32_t i = 0; i < named->count; i++) {
+		zval entry;
+		reflection_type_factory_ex(named->args[i], &entry, false,
+			(zend_type) ZEND_TYPE_INIT_NONE(0),
+			declaring_class, NULL);
+		zend_hash_next_index_insert_new(Z_ARRVAL_P(return_value), &entry);
+	}
+}
+
+ZEND_METHOD(ReflectionClass, getGenericArgumentsForParentClass)
+{
+	reflection_object *intern;
+	zend_class_entry *ce;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(ce);
+
+	if (!ce->generic_types || !ce->generic_types->extends) {
+		RETURN_NULL();
+	}
+
+	reflection_build_named_args_list(return_value, ce->generic_types->extends, ce);
+}
+
+ZEND_METHOD(ReflectionClass, getGenericArgumentsForParentInterface)
+{
+	reflection_object *intern;
+	zend_class_entry *ce;
+	zend_string *name;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_STR(name)
+	ZEND_PARSE_PARAMETERS_END();
+	GET_REFLECTION_OBJECT_PTR(ce);
+
+	if (!ce->generic_types || !ce->generic_types->implements) {
+		RETURN_NULL();
+	}
+
+	zval *zv;
+	ZEND_HASH_FOREACH_VAL(ce->generic_types->implements, zv) {
+		zend_type *boxed = (zend_type *) Z_PTR_P(zv);
+		if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) {
+			zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
+			if (zend_string_equals_ci(named->name, name)) {
+				reflection_build_named_args_list(return_value, boxed, ce);
+				return;
+			}
+		}
+	} ZEND_HASH_FOREACH_END();
+	RETURN_NULL();
+}
+
+ZEND_METHOD(ReflectionClass, getGenericArgumentsForUsedTrait)
+{
+	reflection_object *intern;
+	zend_class_entry *ce;
+	zend_string *name;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_STR(name)
+	ZEND_PARSE_PARAMETERS_END();
+	GET_REFLECTION_OBJECT_PTR(ce);
+
+	if (!ce->generic_types || !ce->generic_types->trait_uses) {
+		RETURN_NULL();
+	}
+
+	zval *zv;
+	ZEND_HASH_FOREACH_VAL(ce->generic_types->trait_uses, zv) {
+		zend_type *boxed = (zend_type *) Z_PTR_P(zv);
+		if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) {
+			zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
+			if (zend_string_equals_ci(named->name, name)) {
+				reflection_build_named_args_list(return_value, boxed, ce);
+				return;
+			}
+		}
+	} ZEND_HASH_FOREACH_END();
+	RETURN_NULL();
+}
+
 PHP_MINIT_FUNCTION(reflection) /* {{{ */
 {
 	memcpy(&reflection_object_handlers, &std_object_handlers, sizeof(zend_object_handlers));
