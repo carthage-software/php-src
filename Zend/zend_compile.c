@@ -466,7 +466,7 @@ static void zend_generic_scope_pop(void) /* {{{ */
 /* }}} */
 
 static zend_generic_parameter *zend_generic_lookup_full(
-		const zend_string *name, uint8_t *origin_out, uint32_t *index_out) /* {{{ */
+		zend_string *name, uint8_t *origin_out, uint32_t *index_out) /* {{{ */
 {
 	zend_string *lc_name = zend_string_tolower(name);
 	for (zend_generic_scope_entry *e = CG(generic_scope); e; e = e->outer) {
@@ -511,7 +511,7 @@ static int zend_generic_lookup_forward(const zend_string *name) /* {{{ */
 static bool zend_type_ast_has_generic_content(zend_ast *ast);
 static zend_type zend_compile_pre_erasure_typename(zend_ast *ast);
 
-static zend_generic_parameter *zend_generic_lookup(const zend_string *name) /* {{{ */
+static zend_generic_parameter *zend_generic_lookup(zend_string *name) /* {{{ */
 {
 	return zend_generic_lookup_full(name, NULL, NULL);
 }
@@ -760,7 +760,7 @@ static zend_generic_type_table *zend_generic_get_or_create_class_table(zend_clas
 	return ce->generic_types;
 }
 
-static zend_generic_parameter *zend_generic_lookup_name(const zend_ast *ast) /* {{{ */
+static zend_generic_parameter *zend_generic_lookup_name(zend_ast *ast) /* {{{ */
 {
 	if (!CG(generic_scope) || ast->kind != ZEND_AST_ZVAL) {
 		return NULL;
@@ -768,7 +768,7 @@ static zend_generic_parameter *zend_generic_lookup_name(const zend_ast *ast) /* 
 	if ((ast->attr & ZEND_NAME_NOT_FQ) != ZEND_NAME_NOT_FQ) {
 		return NULL;
 	}
-	const zval *zv = zend_ast_get_zval(ast);
+	zval *zv = zend_ast_get_zval(ast);
 	if (Z_TYPE_P(zv) != IS_STRING) {
 		return NULL;
 	}

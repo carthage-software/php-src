@@ -294,7 +294,7 @@ static YYSIZE_T zend_yytnamerr(char*, const char*);
 %type <ast> generic_type_parameter_list_inner generic_type_parameter
 %type <ast> optional_generic_type_parameter_bound optional_generic_type_parameter_default
 %type <ast> optional_generic_type_argument_list generic_type_argument_list
-%type <ast> generic_type_argument_list_inner generic_type_argument
+%type <ast> generic_type_argument_list_inner
 %type <ast> optional_call_type_argument_list call_type_argument_list call_type_argument_list_inner
 %type <ast> bound_class_name bound_class_name_reference
 
@@ -898,10 +898,6 @@ generic_type_argument_list_inner:
 			{ $$ = zend_ast_create_list(1, ZEND_AST_GENERIC_TYPE_ARGUMENT_LIST, $1); }
 	|	generic_type_argument_list_inner ',' type_expr
 			{ $$ = zend_ast_list_add($1, $3); }
-;
-
-generic_type_argument:
-		type_expr            { $$ = $1; }
 ;
 
 optional_call_type_argument_list:
