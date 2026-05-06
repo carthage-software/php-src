@@ -204,6 +204,17 @@ static void zend_persist_type_calc(zend_type *type)
 		return;
 	}
 
+	if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(*type)) {
+		zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*type);
+		ADD_SIZE(ZEND_TYPE_NAMED_WITH_ARGS_SIZE(named->count));
+		ADD_INTERNED_STRING(named->name);
+		for (uint32_t i = 0; i < named->count; i++) {
+			zend_persist_type_calc(&named->args[i]);
+		}
+
+		return;
+	}
+
 	if (ZEND_TYPE_HAS_LIST(*type)) {
 		ADD_SIZE(ZEND_TYPE_LIST_SIZE(ZEND_TYPE_LIST(*type)->num_types));
 	}

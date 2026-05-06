@@ -145,6 +145,11 @@ typedef struct _type_reference {
 	zend_type type;
 	/* Whether to use backwards compatible null representation */
 	bool legacy_behavior;
+	/* Optional pre-erasure form for generic-aware reflection. */
+	zend_type pre_erasure;
+	/* Declaring entity for type-parameter resolution. */
+	zend_class_entry *declaring_class;
+	zend_function *declaring_fn;
 } type_reference;
 
 /* Struct for generic type-parameter reflection. Points back at a parameter slot
@@ -1505,11 +1510,42 @@ static reflection_type_kind get_type_kind(zend_type type) {
 	return NAMED_TYPE;
 }
 
-/* {{{ reflection_type_factory */
-static void reflection_type_factory(zend_type type, zval *object, bool legacy_behavior)
+/* {{{ reflection_type_factory_ex */
+static void reflection_type_factory_ex(
+		zend_type type, zval *object, bool legacy_behavior,
+		zend_type pre_erasure,
+		zend_class_entry *declaring_class,
+		zend_function *declaring_fn)
 {
 	reflection_object *intern;
 	type_reference *reference;
+
+	zend_type tp_type;
+	bool is_tp = false;
+	if (ZEND_TYPE_HAS_TYPE_PARAMETER(type)) {
+		tp_type = type;
+		is_tp = true;
+	} else if (ZEND_TYPE_HAS_TYPE_PARAMETER(pre_erasure)) {
+		tp_type = pre_erasure;
+		is_tp = true;
+	}
+
+	if (is_tp) {
+		object_init_ex(object, reflection_type_parameter_reference_ptr);
+		intern = Z_REFLECTION_P(object);
+		reference = (type_reference*) emalloc(sizeof(type_reference));
+		reference->type = tp_type;
+		reference->legacy_behavior = false;
+		reference->pre_erasure = (zend_type) ZEND_TYPE_INIT_NONE(0);
+		reference->declaring_class = declaring_class;
+		reference->declaring_fn = declaring_fn;
+		intern->ptr = reference;
+		intern->ref_type = REF_TYPE_TYPE;
+		zend_type_parameter_ref *tp = ZEND_TYPE_TYPE_PARAMETER(tp_type);
+		ZVAL_STR_COPY(reflection_prop_name(object), tp->name);
+		return;
+	}
+
 	reflection_type_kind type_kind = get_type_kind(type);
 	bool is_mixed = ZEND_TYPE_PURE_MASK(type) == MAY_BE_ANY;
 	bool is_only_null = (ZEND_TYPE_PURE_MASK(type) == MAY_BE_NULL && !ZEND_TYPE_IS_COMPLEX(type));
@@ -1531,6 +1567,9 @@ static void reflection_type_factory(zend_type type, zval *object, bool legacy_be
 	reference = (type_reference*) emalloc(sizeof(type_reference));
 	reference->type = type;
 	reference->legacy_behavior = legacy_behavior && type_kind == NAMED_TYPE && !is_mixed && !is_only_null;
+	reference->pre_erasure = pre_erasure;
+	reference->declaring_class = declaring_class;
+	reference->declaring_fn = declaring_fn;
 	intern->ptr = reference;
 	intern->ref_type = REF_TYPE_TYPE;
 
@@ -1544,6 +1583,11 @@ static void reflection_type_factory(zend_type type, zval *object, bool legacy_be
 	}
 }
 /* }}} */
+
+static void reflection_type_factory(zend_type type, zval *object, bool legacy_behavior)
+{
+	reflection_type_factory_ex(type, object, legacy_behavior, (zend_type) ZEND_TYPE_INIT_NONE(0), NULL, NULL);
+}
 
 /* {{{ reflection_function_factory */
 static void reflection_function_factory(zend_function *function, zval *closure_object, zval *object)
@@ -2814,7 +2858,29 @@ ZEND_METHOD(ReflectionParameter, getType)
 	if (!ZEND_TYPE_IS_SET(param->arg_info->type)) {
 		RETURN_NULL();
 	}
-	reflection_type_factory(param->arg_info->type, return_value, true);
+
+	zend_type pre_erasure = (zend_type) ZEND_TYPE_INIT_NONE(0);
+	zend_class_entry *declaring_class = NULL;
+	zend_function *declaring_fn = NULL;
+	if (param->fptr->type == ZEND_USER_FUNCTION) {
+		zend_op_array *op = &param->fptr->op_array;
+		if (op->generic_types && op->generic_types->parameters) {
+			zend_type *boxed = zend_hash_index_find_ptr(op->generic_types->parameters, param->offset);
+			if (boxed) {
+				pre_erasure = *boxed;
+				declaring_fn = param->fptr;
+			}
+		} else if (op->generic_parameters) {
+			declaring_fn = param->fptr;
+		}
+
+		if (op->scope && op->scope->generic_parameters) {
+			declaring_class = op->scope;
+		}
+	}
+
+	reflection_type_factory_ex(param->arg_info->type, return_value, true,
+		pre_erasure, declaring_class, declaring_fn);
 }
 /* }}} */
 
@@ -3686,7 +3752,24 @@ ZEND_METHOD(ReflectionFunctionAbstract, getReturnType)
 		RETURN_NULL();
 	}
 
-	reflection_type_factory(fptr->common.arg_info[-1].type, return_value, true);
+	zend_type pre_erasure = (zend_type) ZEND_TYPE_INIT_NONE(0);
+	zend_class_entry *declaring_class = NULL;
+	zend_function *declaring_fn = NULL;
+	if (fptr->type == ZEND_USER_FUNCTION) {
+		zend_op_array *op = &fptr->op_array;
+		if (op->generic_types && op->generic_types->return_type) {
+			pre_erasure = *op->generic_types->return_type;
+		}
+		if (op->generic_parameters) {
+			declaring_fn = fptr;
+		}
+		if (op->scope && op->scope->generic_parameters) {
+			declaring_class = op->scope;
+		}
+	}
+
+	reflection_type_factory_ex(fptr->common.arg_info[-1].type, return_value, true,
+		pre_erasure, declaring_class, declaring_fn);
 }
 /* }}} */
 
@@ -6434,7 +6517,22 @@ ZEND_METHOD(ReflectionProperty, getType)
 		RETURN_NULL();
 	}
 
-	reflection_type_factory(ref->prop->type, return_value, true);
+	zend_type pre_erasure = (zend_type) ZEND_TYPE_INIT_NONE(0);
+	zend_class_entry *declaring_class = NULL;
+	zend_class_entry *ce = ref->prop->ce;
+	if (ce && ce->generic_types && ce->generic_types->properties) {
+		zend_type *boxed = zend_hash_find_ptr(ce->generic_types->properties, ref->prop->name);
+		if (boxed) {
+			pre_erasure = *boxed;
+		}
+	}
+
+	if (ce && ce->generic_parameters) {
+		declaring_class = ce;
+	}
+
+	reflection_type_factory_ex(ref->prop->type, return_value, true,
+		pre_erasure, declaring_class, NULL);
 }
 /* }}} */
 
@@ -8350,7 +8448,20 @@ ZEND_METHOD(ReflectionGenericTypeParameter, getBound)
 	if (!ZEND_TYPE_IS_SET(ref->param->bound)) {
 		RETURN_NULL();
 	}
-	reflection_type_factory(ref->param->bound, return_value, false);
+	zend_class_entry *declaring_class = NULL;
+	zend_function *declaring_fn = NULL;
+	if (Z_TYPE(ref->declaring) == IS_OBJECT) {
+		zend_object *obj = Z_OBJ(ref->declaring);
+		if (instanceof_function(obj->ce, reflection_class_ptr)) {
+			reflection_object *decl_intern = reflection_object_from_obj(obj);
+			declaring_class = decl_intern->ptr;
+		} else if (instanceof_function(obj->ce, reflection_function_abstract_ptr)) {
+			reflection_object *decl_intern = reflection_object_from_obj(obj);
+			declaring_fn = decl_intern->ptr;
+		}
+	}
+	reflection_type_factory_ex(ref->param->bound, return_value, false,
+		(zend_type) ZEND_TYPE_INIT_NONE(0), declaring_class, declaring_fn);
 }
 
 ZEND_METHOD(ReflectionGenericTypeParameter, hasDefault)
@@ -8374,7 +8485,22 @@ ZEND_METHOD(ReflectionGenericTypeParameter, getDefault)
 	if (!ZEND_TYPE_IS_SET(ref->param->default_type)) {
 		RETURN_NULL();
 	}
-	reflection_type_factory(ref->param->default_type, return_value, false);
+
+	zend_class_entry *declaring_class = NULL;
+	zend_function *declaring_fn = NULL;
+	if (Z_TYPE(ref->declaring) == IS_OBJECT) {
+		zend_object *obj = Z_OBJ(ref->declaring);
+		if (instanceof_function(obj->ce, reflection_class_ptr)) {
+			reflection_object *decl_intern = reflection_object_from_obj(obj);
+			declaring_class = decl_intern->ptr;
+		} else if (instanceof_function(obj->ce, reflection_function_abstract_ptr)) {
+			reflection_object *decl_intern = reflection_object_from_obj(obj);
+			declaring_fn = decl_intern->ptr;
+		}
+	}
+
+	reflection_type_factory_ex(ref->param->default_type, return_value, false,
+		(zend_type) ZEND_TYPE_INIT_NONE(0), declaring_class, declaring_fn);
 }
 
 ZEND_METHOD(ReflectionGenericTypeParameter, getDeclaringEntity)
@@ -8440,12 +8566,58 @@ ZEND_METHOD(ReflectionTypeParameterReference, getName)
 
 ZEND_METHOD(ReflectionTypeParameterReference, getTypeParameter)
 {
-	/* TODO(azjezz): resolution to the originating ReflectionGenericTypeParameter requires the
-	 * declaring entity, which is not currently threaded through type_reference. */
-	zend_throw_error(NULL,
-		"ReflectionTypeParameterReference::getTypeParameter() requires the declaring "
-		"entity to be threaded through; not yet implemented");
-	RETURN_THROWS();
+	reflection_object *intern;
+	type_reference *ref;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+	GET_REFLECTION_OBJECT_PTR(ref);
+
+	if (!ZEND_TYPE_HAS_TYPE_PARAMETER(ref->type)) {
+		zend_throw_error(NULL, "Type parameter reference has no parameter");
+		RETURN_THROWS();
+	}
+
+	zend_type_parameter_ref *tp = ZEND_TYPE_TYPE_PARAMETER(ref->type);
+
+	zend_generic_parameter_list *list = NULL;
+	zval declaring_zv;
+	ZVAL_UNDEF(&declaring_zv);
+
+	if (tp->origin == 0 /* class */) {
+		if (!ref->declaring_class) {
+			zend_throw_error(NULL,
+				"Type parameter reference has no declaring class context");
+			RETURN_THROWS();
+		}
+
+		list = ref->declaring_class->generic_parameters;
+		zend_reflection_class_factory(ref->declaring_class, &declaring_zv);
+	} else /* function */ {
+		if (!ref->declaring_fn) {
+			zend_throw_error(NULL,
+				"Type parameter reference has no declaring function context");
+			RETURN_THROWS();
+		}
+
+		list = ref->declaring_fn->op_array.generic_parameters;
+		if (ref->declaring_fn->op_array.scope) {
+			reflection_method_factory(ref->declaring_fn->op_array.scope,
+				ref->declaring_fn, NULL, &declaring_zv);
+		} else {
+			reflection_function_factory(ref->declaring_fn, NULL, &declaring_zv);
+		}
+	}
+
+	if (!list || tp->index >= list->count) {
+		zval_ptr_dtor(&declaring_zv);
+		zend_throw_error(NULL,
+			"Type parameter index %u out of range for declaring entity", tp->index);
+		RETURN_THROWS();
+	}
+
+	reflection_generic_type_parameter_factory(
+		&list->parameters[tp->index], tp->index, &declaring_zv, return_value);
+	zval_ptr_dtor(&declaring_zv);
 }
 
 ZEND_METHOD(ReflectionTypeParameterReference, allowsNull)
@@ -8471,16 +8643,36 @@ ZEND_METHOD(ReflectionTypeParameterReference, __toString)
 
 ZEND_METHOD(ReflectionNamedType, hasGenericArguments)
 {
+	reflection_object *intern;
+	type_reference *ref;
+
 	ZEND_PARSE_PARAMETERS_NONE();
-	/* TODO(azjezz): pre-erasure type-argument exposure on use-site named types requires
-	 * pre-erasure storage in the generic side table to be threaded into reflection_type_factory. */
-	RETURN_FALSE;
+	GET_REFLECTION_OBJECT_PTR(ref);
+	RETURN_BOOL(ZEND_TYPE_HAS_NAMED_WITH_ARGS(ref->pre_erasure));
 }
 
 ZEND_METHOD(ReflectionNamedType, getGenericArguments)
 {
+	reflection_object *intern;
+	type_reference *ref;
+
 	ZEND_PARSE_PARAMETERS_NONE();
-	array_init(return_value);
+	GET_REFLECTION_OBJECT_PTR(ref);
+
+	if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(ref->pre_erasure)) {
+		array_init(return_value);
+		return;
+	}
+
+	zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(ref->pre_erasure);
+	array_init_size(return_value, named->count);
+	for (uint32_t i = 0; i < named->count; i++) {
+		zval entry;
+		reflection_type_factory_ex(named->args[i], &entry, false,
+			(zend_type) ZEND_TYPE_INIT_NONE(0),
+			ref->declaring_class, ref->declaring_fn);
+		zend_hash_next_index_insert_new(Z_ARRVAL_P(return_value), &entry);
+	}
 }
 
 PHP_MINIT_FUNCTION(reflection) /* {{{ */

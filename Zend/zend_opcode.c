@@ -121,6 +121,15 @@ ZEND_API void zend_type_release(zend_type type, bool persistent) {
 		if (!ZEND_TYPE_USES_ARENA(type)) {
 			pefree(ZEND_TYPE_LIST(type), persistent);
 		}
+	} else if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(type)) {
+		zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(type);
+		if (named->name) {
+			zend_string_release(named->name);
+		}
+		for (uint32_t i = 0; i < named->count; i++) {
+			zend_type_release(named->args[i], persistent);
+		}
+		pefree(named, persistent);
 	} else if (ZEND_TYPE_HAS_TYPE_PARAMETER(type)) {
 		zend_type_parameter_ref *ref = ZEND_TYPE_TYPE_PARAMETER(type);
 		if (ref->name) {

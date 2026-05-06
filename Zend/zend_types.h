@@ -140,8 +140,21 @@ typedef struct _zend_type_arguments {
 	zend_type arguments[1];
 } zend_type_arguments;
 
+/* Pre-erasure named type with type arguments. */
+typedef struct _zend_type_named_with_args {
+	zend_string *name;       /* class name */
+	uint32_t     name_attr;  /* ZEND_NAME_NOT_FQ / ZEND_NAME_FQ / ZEND_NAME_RELATIVE */
+	uint32_t     count;      /* number of type arguments */
+	zend_type    args[1];    /* flexible array of pre-erasure type arguments */
+} zend_type_named_with_args;
+
+#define ZEND_TYPE_NAMED_WITH_ARGS_SIZE(count) \
+	(sizeof(zend_type_named_with_args) + ((count) - 1) * sizeof(zend_type))
+
 #define _ZEND_TYPE_EXTRA_FLAGS_SHIFT 26
-#define _ZEND_TYPE_MASK ((1u << 26) - 1)
+#define _ZEND_TYPE_MASK (((1u << 26) - 1) | _ZEND_TYPE_NAMED_WITH_ARGS_BIT)
+/* Pre-erasure named type with type arguments. Side-table only. */
+#define _ZEND_TYPE_NAMED_WITH_ARGS_BIT (1u << 31)
 /* Generic type-parameter reference. */
 #define _ZEND_TYPE_TYPE_PARAMETER_BIT (1u << 25)
 /* Only one of these bits may be set. */
@@ -149,7 +162,7 @@ typedef struct _zend_type_arguments {
 // Used to signify that type.ptr is not a `zend_string*` but a `const char*`,
 #define _ZEND_TYPE_LITERAL_NAME_BIT (1u << 23)
 #define _ZEND_TYPE_LIST_BIT (1u << 22)
-#define _ZEND_TYPE_KIND_MASK (_ZEND_TYPE_LIST_BIT|_ZEND_TYPE_NAME_BIT|_ZEND_TYPE_LITERAL_NAME_BIT|_ZEND_TYPE_TYPE_PARAMETER_BIT)
+#define _ZEND_TYPE_KIND_MASK (_ZEND_TYPE_LIST_BIT|_ZEND_TYPE_NAME_BIT|_ZEND_TYPE_LITERAL_NAME_BIT|_ZEND_TYPE_TYPE_PARAMETER_BIT|_ZEND_TYPE_NAMED_WITH_ARGS_BIT)
 /* For BC behaviour with iterable type */
 #define _ZEND_TYPE_ITERABLE_BIT (1u << 21)
 /* Whether the type list is arena allocated */
@@ -185,6 +198,12 @@ typedef struct _zend_type_arguments {
 
 #define ZEND_TYPE_TYPE_PARAMETER(t) \
 	((zend_type_parameter_ref *) (t).ptr)
+
+#define ZEND_TYPE_HAS_NAMED_WITH_ARGS(t) \
+	((((t).type_mask) & _ZEND_TYPE_NAMED_WITH_ARGS_BIT) != 0)
+
+#define ZEND_TYPE_NAMED_WITH_ARGS(t) \
+	((zend_type_named_with_args *) (t).ptr)
 
 #define ZEND_TYPE_IS_ITERABLE_FALLBACK(t) \
 	((((t).type_mask) & _ZEND_TYPE_ITERABLE_BIT) != 0)
