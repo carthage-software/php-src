@@ -431,6 +431,8 @@ void zend_init_compiler_data_structures(void) /* {{{ */
 	CG(encoding_declared) = 0;
 	CG(memoized_exprs) = NULL;
 	CG(memoize_mode) = ZEND_MEMOIZE_NONE;
+	CG(type_arg_depth) = 0;
+	CG(type_arg_residual_token) = 0;
 }
 /* }}} */
 
@@ -2048,6 +2050,12 @@ int ZEND_FASTCALL zendlex(zend_parser_stack_elem *elem) /* {{{ */
 	zval zv;
 	int ret;
 
+	if (CG(type_arg_residual_token)) {
+		ret = CG(type_arg_residual_token);
+		CG(type_arg_residual_token) = 0;
+		return ret;
+	}
+
 	if (CG(increment_lineno)) {
 		CG(zend_lineno)++;
 		CG(increment_lineno) = 0;
@@ -2055,8 +2063,22 @@ int ZEND_FASTCALL zendlex(zend_parser_stack_elem *elem) /* {{{ */
 
 	ret = lex_scan(&zv, elem);
 	ZEND_ASSERT(!EG(exception) || ret == T_ERROR);
-	return ret;
 
+	if (CG(type_arg_depth) > 0) {
+		switch (ret) {
+			case T_SR:
+				CG(type_arg_residual_token) = '>';
+				return '>';
+			case T_IS_GREATER_OR_EQUAL:
+				CG(type_arg_residual_token) = '=';
+				return '>';
+			case T_SR_EQUAL:
+				CG(type_arg_residual_token) = T_IS_GREATER_OR_EQUAL;
+				return '>';
+		}
+	}
+
+	return ret;
 }
 /* }}} */
 
