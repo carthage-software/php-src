@@ -512,10 +512,13 @@ static zend_generic_parameter_list *zend_compile_generic_type_parameter_list(zen
 	zend_generic_parameter_list *params =
 		zend_generic_parameter_list_alloc(list->children, /* persistent */ false);
 
+	zend_string *prev_optional_name = NULL;
+
 	for (uint32_t i = 0; i < list->children; i++) {
 		zend_ast *param_ast = list->child[i];
 		ZEND_ASSERT(param_ast->kind == ZEND_AST_GENERIC_TYPE_PARAMETER);
 		zend_string *name = zval_make_interned_string(zend_ast_get_zval(param_ast->child[0]));
+		bool has_default = param_ast->child[2] != NULL;
 
 		for (uint32_t j = 0; j < i; j++) {
 			if (zend_string_equals(params->parameters[j].name, name)) {
@@ -531,6 +534,19 @@ static zend_generic_parameter_list *zend_compile_generic_type_parameter_list(zen
 			zend_generic_parameter_list_destroy(params);
 			zend_error_noreturn(E_COMPILE_ERROR,
 				"Type parameter %s shadows enclosing type parameter", ZSTR_VAL(dup));
+		}
+
+		if (!has_default && prev_optional_name != NULL) {
+			zend_string *cur = zend_string_copy(name);
+			zend_string *prev = zend_string_copy(prev_optional_name);
+			zend_generic_parameter_list_destroy(params);
+			zend_error_noreturn(E_COMPILE_ERROR,
+				"Optional type parameter %s cannot be declared before required type parameter %s",
+				ZSTR_VAL(prev), ZSTR_VAL(cur));
+		}
+
+		if (has_default && prev_optional_name == NULL) {
+			prev_optional_name = name;
 		}
 
 		params->parameters[i].name = zend_string_copy(name);
