@@ -367,6 +367,18 @@ static void zend_persist_type(zend_type *type) {
 		return;
 	}
 
+	if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(*type)) {
+		zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*type);
+		named = zend_shared_memdup_put_free(named, ZEND_TYPE_NAMED_WITH_ARGS_SIZE(named->count));
+		zend_accel_store_interned_string(named->name);
+		for (uint32_t i = 0; i < named->count; i++) {
+			zend_persist_type(&named->args[i]);
+		}
+
+		ZEND_TYPE_SET_PTR(*type, named);
+		return;
+	}
+
 	if (ZEND_TYPE_HAS_LIST(*type)) {
 		zend_type_list *list = ZEND_TYPE_LIST(*type);
 		if (ZEND_TYPE_USES_ARENA(*type) || zend_accel_in_shm(list)) {

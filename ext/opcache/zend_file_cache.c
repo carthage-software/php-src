@@ -482,6 +482,19 @@ static void zend_file_cache_serialize_type(
 		return;
 	}
 
+	if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(*type)) {
+		zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*type);
+		SERIALIZE_PTR(named);
+		ZEND_TYPE_SET_PTR(*type, named);
+		UNSERIALIZE_PTR(named);
+		SERIALIZE_STR(named->name);
+		for (uint32_t i = 0; i < named->count; i++) {
+			zend_file_cache_serialize_type(&named->args[i], script, info, buf);
+		}
+
+		return;
+	}
+
 	if (ZEND_TYPE_HAS_LIST(*type)) {
 		zend_type_list *list = ZEND_TYPE_LIST(*type);
 		SERIALIZE_PTR(list);
@@ -1490,6 +1503,18 @@ static void zend_file_cache_unserialize_type(
 		UNSERIALIZE_PTR(ref);
 		ZEND_TYPE_SET_PTR(*type, ref);
 		UNSERIALIZE_STR(ref->name);
+		return;
+	}
+
+	if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(*type)) {
+		zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*type);
+		UNSERIALIZE_PTR(named);
+		ZEND_TYPE_SET_PTR(*type, named);
+		UNSERIALIZE_STR(named->name);
+		for (uint32_t i = 0; i < named->count; i++) {
+			zend_file_cache_unserialize_type(&named->args[i], scope, script, buf);
+		}
+
 		return;
 	}
 

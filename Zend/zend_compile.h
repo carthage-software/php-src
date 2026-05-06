@@ -149,6 +149,7 @@ typedef struct _zend_generic_type_table {
 /* Compile-time linked stack of in-scope generic type parameters. */
 typedef struct _zend_generic_scope_entry {
 	zend_generic_parameter_list *params;
+	uint8_t origin;  /* 0 = class/interface/trait, 1 = function/method/closure/arrow-fn */
 	struct _zend_generic_scope_entry *outer;
 } zend_generic_scope_entry;
 
