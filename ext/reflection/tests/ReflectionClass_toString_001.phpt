@@ -533,7 +533,7 @@ Class [ <internal:Reflection> class ReflectionClass implements Stringable, Refle
 
       - Parameters [0] {
       }
-      - Return [ ?array ]
+      - Return [ array ]
     }
 
     Method [ <internal:Reflection> public method getGenericArgumentsForParentInterface ] {
@@ -541,7 +541,7 @@ Class [ <internal:Reflection> class ReflectionClass implements Stringable, Refle
       - Parameters [1] {
         Parameter #0 [ <required> string $name ]
       }
-      - Return [ ?array ]
+      - Return [ array ]
     }
 
     Method [ <internal:Reflection> public method getGenericArgumentsForUsedTrait ] {
@@ -549,7 +549,7 @@ Class [ <internal:Reflection> class ReflectionClass implements Stringable, Refle
       - Parameters [1] {
         Parameter #0 [ <required> string $name ]
       }
-      - Return [ ?array ]
+      - Return [ array ]
     }
   }
 }
