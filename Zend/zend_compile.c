@@ -101,6 +101,7 @@ static zend_op *zend_delayed_compile_var(znode *result, zend_ast *ast, uint32_t 
 static void zend_compile_expr(znode *result, zend_ast *ast);
 static void zend_compile_stmt(zend_ast *ast);
 static void zend_compile_assign(znode *result, zend_ast *ast, bool stmt, uint32_t type);
+static zend_type zend_compile_typename(zend_ast *ast);
 
 #ifdef ZEND_CHECK_STACK_LIMIT
 zend_never_inline static void zend_stack_limit_error(void)
@@ -433,6 +434,94 @@ void zend_init_compiler_data_structures(void) /* {{{ */
 	CG(memoize_mode) = ZEND_MEMOIZE_NONE;
 	CG(type_arg_depth) = 0;
 	CG(type_arg_residual_token) = 0;
+	CG(generic_scope) = NULL;
+}
+/* }}} */
+
+static void zend_generic_scope_push(zend_generic_parameter_list *params) /* {{{ */
+{
+	zend_generic_scope_entry *entry = emalloc(sizeof(zend_generic_scope_entry));
+	entry->params = params;
+	entry->outer = CG(generic_scope);
+	CG(generic_scope) = entry;
+}
+/* }}} */
+
+static void zend_generic_scope_pop(void) /* {{{ */
+{
+	zend_generic_scope_entry *top = CG(generic_scope);
+	ZEND_ASSERT(top != NULL);
+	CG(generic_scope) = top->outer;
+	efree(top);
+}
+/* }}} */
+
+static zend_generic_parameter *zend_generic_lookup(const zend_string *name) /* {{{ */
+{
+	for (zend_generic_scope_entry *e = CG(generic_scope); e; e = e->outer) {
+		zend_generic_parameter_list *params = e->params;
+		for (uint32_t i = 0; i < params->count; i++) {
+			if (zend_string_equals(params->parameters[i].name, name)) {
+				return &params->parameters[i];
+			}
+		}
+	}
+	return NULL;
+}
+/* }}} */
+
+static zend_generic_parameter_list *zend_compile_generic_type_parameter_list(zend_ast *list_ast) /* {{{ */
+{
+	if (!list_ast) {
+		return NULL;
+	}
+	zend_ast_list *list = zend_ast_get_list(list_ast);
+	ZEND_ASSERT(list->children > 0);
+
+	zend_generic_parameter_list *params =
+		zend_generic_parameter_list_alloc(list->children, /* persistent */ false);
+
+	for (uint32_t i = 0; i < list->children; i++) {
+		zend_ast *param_ast = list->child[i];
+		ZEND_ASSERT(param_ast->kind == ZEND_AST_GENERIC_TYPE_PARAMETER);
+		zend_string *name = zval_make_interned_string(zend_ast_get_zval(param_ast->child[0]));
+
+		for (uint32_t j = 0; j < i; j++) {
+			if (zend_string_equals(params->parameters[j].name, name)) {
+				zend_string *dup = zend_string_copy(name);
+				zend_generic_parameter_list_destroy(params);
+				zend_error_noreturn(E_COMPILE_ERROR,
+					"Cannot redeclare type parameter %s", ZSTR_VAL(dup));
+			}
+		}
+
+		params->parameters[i].name = zend_string_copy(name);
+		params->parameters[i].variance = (uint8_t) param_ast->attr;
+		if (param_ast->child[1]) {
+			params->parameters[i].bound = zend_compile_typename(param_ast->child[1]);
+		}
+		if (param_ast->child[2]) {
+			params->parameters[i].default_type = zend_compile_typename(param_ast->child[2]);
+		}
+	}
+
+	return params;
+}
+/* }}} */
+
+static zend_generic_parameter *zend_generic_lookup_name(const zend_ast *ast) /* {{{ */
+{
+	if (!CG(generic_scope) || ast->kind != ZEND_AST_ZVAL) {
+		return NULL;
+	}
+	if ((ast->attr & ZEND_NAME_NOT_FQ) != ZEND_NAME_NOT_FQ) {
+		return NULL;
+	}
+	const zval *zv = zend_ast_get_zval(ast);
+	if (Z_TYPE_P(zv) != IS_STRING) {
+		return NULL;
+	}
+	return zend_generic_lookup(Z_STR_P(zv));
 }
 /* }}} */
 
@@ -2118,6 +2207,8 @@ ZEND_API void zend_initialize_class_data(zend_class_entry *ce, bool nullify_hand
 	ce->attributes = NULL;
 	ce->enum_backing_type = IS_UNDEF;
 	ce->backed_enum_table = NULL;
+	ce->generic_parameters = NULL;
+	ce->generic_types = NULL;
 
 	if (nullify_handlers) {
 		ce->constructor = NULL;
@@ -7403,6 +7494,17 @@ static zend_type zend_compile_single_typename(zend_ast *ast)
 	if (ast->kind == ZEND_AST_GENERIC_NAMED_TYPE) {
 		ast = ast->child[0];
 	}
+	/* Generic type parameter reference: erase to the parameter's bound (or `mixed` when unbounded). */
+	{
+		zend_generic_parameter *param = zend_generic_lookup_name(ast);
+		if (param) {
+			if (ZEND_TYPE_IS_SET(param->bound)) {
+				return param->bound;
+			}
+
+			return (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_ANY);
+		}
+	}
 	if (ast->kind == ZEND_AST_TYPE) {
 		if (ast->attr == IS_STATIC && !CG(active_class_entry) && zend_is_scope_known()) {
 			zend_error_noreturn(E_COMPILE_ERROR,
@@ -8777,9 +8879,11 @@ static zend_op_array *zend_compile_func_decl_ex(
 	zend_ast *uses_ast = decl->child[1];
 	zend_ast *stmt_ast = decl->child[2];
 	zend_ast *return_type_ast = decl->child[3];
+	zend_ast *generic_params_ast = decl->child[5];
 	bool is_method = decl->kind == ZEND_AST_METHOD;
 	zend_string *lcname = NULL;
 	bool is_hook = decl->kind == ZEND_AST_PROPERTY_HOOK;
+	bool generic_scope_pushed = false;
 
 	zend_class_entry *orig_class_entry = CG(active_class_entry);
 	zend_op_array *orig_op_array = CG(active_op_array);
@@ -8879,6 +8983,15 @@ static zend_op_array *zend_compile_func_decl_ex(
 		zend_stack_push(&CG(loop_var_stack), (void *) &dummy_var);
 	}
 
+	/* Harvest function/method generic type parameters and push them into scope
+	 * so that parameter, return, and body type annotations erase correctly.
+	 * See GENERICS.md §6.9. */
+	if (generic_params_ast) {
+		op_array->generic_parameters = zend_compile_generic_type_parameter_list(generic_params_ast);
+		zend_generic_scope_push(op_array->generic_parameters);
+		generic_scope_pushed = true;
+	}
+
 	zend_compile_params(params_ast, return_type_ast,
 		is_method && zend_string_equals_literal(lcname, ZEND_TOSTRING_FUNC_NAME) ? IS_STRING : 0);
 	if (CG(active_op_array)->fn_flags & ZEND_ACC_GENERATOR) {
@@ -8960,6 +9073,10 @@ static zend_op_array *zend_compile_func_decl_ex(
 
 	if (lcname != NULL) {
 		zend_string_release_ex(lcname, 0);
+	}
+
+	if (generic_scope_pushed) {
+		zend_generic_scope_pop();
 	}
 
 	CG(active_op_array) = orig_op_array;
@@ -9652,6 +9769,12 @@ static void zend_compile_class_decl(znode *result, const zend_ast *ast, bool top
 		ce->ce_flags |= ZEND_ACC_NOT_SERIALIZABLE;
 	}
 
+	if (decl->child[5]) {
+		ZEND_ASSERT(!(decl->flags & ZEND_ACC_ANON_CLASS));
+		ce->generic_parameters = zend_compile_generic_type_parameter_list(decl->child[5]);
+		zend_generic_scope_push(ce->generic_parameters);
+	}
+
 	if (extends_ast) {
 		ce->parent_name =
 			zend_resolve_const_class_name_reference(extends_ast, "class name");
@@ -9682,6 +9805,10 @@ static void zend_compile_class_decl(znode *result, const zend_ast *ast, bool top
 
 	if ((ce->ce_flags & (ZEND_ACC_IMPLICIT_ABSTRACT_CLASS|ZEND_ACC_INTERFACE|ZEND_ACC_TRAIT|ZEND_ACC_EXPLICIT_ABSTRACT_CLASS)) == ZEND_ACC_IMPLICIT_ABSTRACT_CLASS) {
 		zend_verify_abstract_class(ce);
+	}
+
+	if (ce->generic_parameters) {
+		zend_generic_scope_pop();
 	}
 
 	CG(active_class_entry) = original_ce;

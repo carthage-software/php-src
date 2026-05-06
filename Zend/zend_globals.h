@@ -167,6 +167,8 @@ struct _zend_compiler_globals {
 
 	uint32_t type_arg_depth;
 	int type_arg_residual_token;
+
+	struct _zend_generic_scope_entry *generic_scope;
 #ifdef ZTS
 	uint32_t copied_functions_count;
 #endif
