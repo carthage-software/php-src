@@ -164,6 +164,9 @@ struct _zend_compiler_globals {
 	uint32_t internal_run_time_cache_size;
 
 	zend_stack short_circuiting_opnums;
+
+	uint32_t type_arg_depth;
+	int type_arg_residual_token;
 #ifdef ZTS
 	uint32_t copied_functions_count;
 #endif
