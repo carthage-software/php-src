@@ -153,6 +153,7 @@ typedef struct _zend_generic_scope_entry {
 	zend_generic_parameter_list *params;
 	uint32_t visible_count; 						/* number of parameters in `params` already declared */
 	struct _zend_generic_parameter *self_compiling; /* param whose bound/default is being compiled, or NULL */
+	HashTable *shadowing_classes;                   /* lc_names of class-likes declared inside this scope; lazy-allocated */
 	uint8_t origin;  								/* 0 = class/interface/trait, 1 = function/method/closure/arrow-fn */
 	struct _zend_generic_scope_entry *outer;
 } zend_generic_scope_entry;
