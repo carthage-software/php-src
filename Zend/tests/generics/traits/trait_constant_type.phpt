@@ -6,7 +6,7 @@ trait Holder<T : int> {
     const T MIN = 0;
 }
 class Box {
-    use Holder;
+    use Holder<int>;
 }
 $rc = new ReflectionClass('Box');
 $consts = $rc->getReflectionConstants();

@@ -11,7 +11,7 @@ trait B<Y : int> {
     public Y $by;
 }
 class C {
-    use A, B;
+    use A<object>, B<int>;
 }
 $rc = new ReflectionClass('C');
 echo $rc->getMethod('a')->getReturnType()->getName(), "\n";

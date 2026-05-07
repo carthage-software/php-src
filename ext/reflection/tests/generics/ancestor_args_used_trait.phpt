@@ -2,7 +2,7 @@
 Reflection: getGenericArgumentsForUsedTrait returns args from use clause; throws when trait not used
 --FILE--
 <?php
-trait Holder<T> { public T $val; }
+trait Holder<T = mixed> { public T $val; }
 trait Pair<K, V> { public K $k; public V $v; }
 trait Plain { public int $x; }
 
