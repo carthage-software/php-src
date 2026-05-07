@@ -856,7 +856,7 @@ optional_generic_type_parameter_list:
 generic_type_parameter_list:
 		'<' { CG(type_arg_depth)++; }
 		generic_type_parameter_list_inner possible_comma '>'
-			{ CG(type_arg_depth)--; $$ = $3; }
+			{ CG(type_arg_depth)--; zend_check_generic_param_list_size($3); $$ = $3; }
 ;
 
 generic_type_parameter_list_inner:
@@ -896,7 +896,7 @@ optional_generic_type_argument_list:
 generic_type_argument_list:
 		'<' { CG(type_arg_depth)++; }
 		generic_type_argument_list_inner possible_comma '>'
-			{ CG(type_arg_depth)--; $$ = $3; }
+			{ CG(type_arg_depth)--; zend_check_generic_arg_list_size($3); $$ = $3; }
 ;
 
 generic_type_argument_list_inner:
@@ -914,7 +914,7 @@ optional_call_type_argument_list:
 call_type_argument_list:
 		T_TURBOFISH { CG(type_arg_depth)++; }
 		call_type_argument_list_inner possible_comma '>'
-			{ CG(type_arg_depth)--; $$ = $3; }
+			{ CG(type_arg_depth)--; zend_check_generic_arg_list_size($3); $$ = $3; }
 ;
 
 call_type_argument_list_inner:

@@ -519,6 +519,36 @@ static zend_generic_parameter *zend_generic_lookup(zend_string *name) /* {{{ */
 }
 /* }}} */
 
+ZEND_API void zend_check_generic_param_list_size(zend_ast *list_ast) /* {{{ */
+{
+	if (list_ast == NULL) {
+		return;
+	}
+
+	uint32_t children = zend_ast_get_list(list_ast)->children;
+	if (children > ZEND_GENERIC_MAX_PARAMS) {
+		zend_error_noreturn(E_COMPILE_ERROR,
+			"Cannot declare more than %u generic type parameters (got %u)",
+			ZEND_GENERIC_MAX_PARAMS, children);
+	}
+}
+/* }}} */
+
+ZEND_API void zend_check_generic_arg_list_size(zend_ast *list_ast) /* {{{ */
+{
+	if (list_ast == NULL) {
+		return;
+	}
+
+	uint32_t children = zend_ast_get_list(list_ast)->children;
+	if (children > ZEND_GENERIC_MAX_PARAMS) {
+		zend_error_noreturn(E_COMPILE_ERROR,
+			"Cannot specify more than %u generic type arguments (got %u)",
+			ZEND_GENERIC_MAX_PARAMS, children);
+	}
+}
+/* }}} */
+
 static zend_generic_parameter_list *zend_compile_generic_type_parameter_list(zend_ast *list_ast) /* {{{ */
 {
 	if (!list_ast) {
