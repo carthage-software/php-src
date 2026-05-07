@@ -3,7 +3,7 @@ Generic syntax: turbofish on instance method call (including nullsafe)
 --FILE--
 <?php
 class C {
-    public function m($x) { return $x * 3; }
+    public function m<T>($x) { return $x * 3; }
 }
 $c = new C;
 echo $c->m::<int>(5), "\n";

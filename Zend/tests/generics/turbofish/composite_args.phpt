@@ -2,7 +2,7 @@
 Turbofish: union and intersection type arguments
 --FILE--
 <?php
-function f($x) { return $x; }
+function f<T>($x) { return $x; }
 var_dump(f::<int|string>(42));
 var_dump(f::<int&string>(42));
 var_dump(f::<(A&B)|C>(42));

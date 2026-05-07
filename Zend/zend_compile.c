@@ -549,6 +549,102 @@ ZEND_API void zend_check_generic_arg_list_size(zend_ast *list_ast) /* {{{ */
 }
 /* }}} */
 
+static zend_always_inline void zend_compute_generic_required_total(
+		const zend_generic_parameter_list *params, uint32_t *required, uint32_t *total)
+{
+	uint32_t t = params ? params->count : 0;
+	uint32_t r = 0;
+	if (params) {
+		while (r < t && !ZEND_TYPE_IS_SET(params->parameters[r].default_type)) {
+			r++;
+		}
+	}
+
+	*required = r;
+	*total = t;
+}
+
+ZEND_API void zend_check_generic_call_arity(const zend_function *fbc, uint32_t arity)
+{
+	const zend_generic_parameter_list *params = NULL;
+	if (ZEND_USER_CODE(fbc->common.type)) {
+		params = fbc->op_array.generic_parameters;
+	}
+
+	uint32_t required, total;
+	zend_compute_generic_required_total(params, &required, &total);
+
+	if (arity > total) {
+		zend_throw_error(zend_ce_argument_count_error,
+			"Too many generic type arguments to %s%s%s(), %u passed and %s %u expected",
+			fbc->common.scope ? ZSTR_VAL(fbc->common.scope->name) : "",
+			fbc->common.scope ? "::" : "",
+			fbc->common.function_name ? ZSTR_VAL(fbc->common.function_name) : "{closure}",
+			arity,
+			required == total ? "exactly" : "at most",
+			total);
+		return;
+	}
+	if (arity < required) {
+		zend_throw_error(zend_ce_argument_count_error,
+			"Too few generic type arguments to %s%s%s(), %u passed and %s %u expected",
+			fbc->common.scope ? ZSTR_VAL(fbc->common.scope->name) : "",
+			fbc->common.scope ? "::" : "",
+			fbc->common.function_name ? ZSTR_VAL(fbc->common.function_name) : "{closure}",
+			arity,
+			required == total ? "exactly" : "at least",
+			required);
+	}
+}
+
+ZEND_API void zend_check_generic_new_arity(const zend_class_entry *ce, uint32_t arity)
+{
+	uint32_t required, total;
+	zend_compute_generic_required_total(ce->generic_parameters, &required, &total);
+
+	if (arity > total) {
+		zend_throw_error(zend_ce_argument_count_error,
+			"Too many generic type arguments to new %s, %u passed and %s %u expected",
+			ZSTR_VAL(ce->name), arity,
+			required == total ? "exactly" : "at most", total);
+		return;
+	}
+	if (arity < required) {
+		zend_throw_error(zend_ce_argument_count_error,
+			"Too few generic type arguments to new %s, %u passed and %s %u expected",
+			ZSTR_VAL(ce->name), arity,
+			required == total ? "exactly" : "at least", required);
+	}
+}
+
+#define ZEND_VERIFY_ARITY_KIND_CALL  0
+#define ZEND_VERIFY_ARITY_KIND_NEW   1
+
+static void zend_emit_verify_generic_arity(zend_ast *turbofish_ast, uint8_t kind, const znode *new_result)
+{
+	if (turbofish_ast == NULL) {
+		return;
+	}
+	uint32_t arity = zend_ast_get_list(turbofish_ast)->children;
+	ZEND_ASSERT(arity > 0 && arity <= ZEND_GENERIC_MAX_PARAMS);
+
+	zend_op *opline = get_next_op();
+	opline->opcode = ZEND_VERIFY_GENERIC_ARITY;
+	opline->op2_type = IS_UNUSED;
+	opline->op2.num = arity;
+	opline->extended_value = 0;
+	if (kind == ZEND_VERIFY_ARITY_KIND_NEW) {
+		ZEND_ASSERT(new_result != NULL && new_result->op_type == IS_TMP_VAR);
+		opline->op1_type = new_result->op_type;
+		opline->op1.var = new_result->u.op.var;
+	} else {
+		opline->op1_type = IS_UNUSED;
+		opline->op1.num = 0;
+	}
+	opline->result_type = IS_UNUSED;
+	opline->result.num = 0;
+}
+
 static zend_generic_parameter_list *zend_compile_generic_type_parameter_list(zend_ast *list_ast) /* {{{ */
 {
 	if (!list_ast) {
@@ -4431,10 +4527,12 @@ ZEND_API uint8_t zend_get_call_op(const zend_op *init_op, const zend_function *f
 }
 /* }}} */
 
-static bool zend_compile_call_common(znode *result, zend_ast *args_ast, const zend_function *fbc, uint32_t lineno, uint32_t type) /* {{{ */
+static bool zend_compile_call_common(znode *result, zend_ast *args_ast, const zend_function *fbc, uint32_t lineno, uint32_t type, zend_ast *turbofish_ast, uint8_t verify_kind, const znode *new_result) /* {{{ */
 {
 	zend_op *opline;
 	uint32_t opnum_init = get_next_op_number() - 1;
+
+	zend_emit_verify_generic_arity(turbofish_ast, verify_kind, new_result);
 
 	if (args_ast->kind == ZEND_AST_CALLABLE_CONVERT) {
 		opline = &CG(active_op_array)->opcodes[opnum_init];
@@ -4517,7 +4615,7 @@ static bool zend_compile_function_name(znode *name_node, zend_ast *name_ast) /* 
 }
 /* }}} */
 
-static void zend_compile_dynamic_call(znode *result, znode *name_node, zend_ast *args_ast, uint32_t lineno, uint32_t type) /* {{{ */
+static void zend_compile_dynamic_call(znode *result, znode *name_node, zend_ast *args_ast, zend_ast *turbofish_ast, uint32_t lineno, uint32_t type) /* {{{ */
 {
 	if (name_node->op_type == IS_CONST && Z_TYPE(name_node->u.constant) == IS_STRING) {
 		const char *colon;
@@ -4547,7 +4645,7 @@ static void zend_compile_dynamic_call(znode *result, znode *name_node, zend_ast 
 		zend_emit_op(NULL, ZEND_INIT_DYNAMIC_CALL, NULL, name_node);
 	}
 
-	zend_compile_call_common(result, args_ast, NULL, lineno, type);
+	zend_compile_call_common(result, args_ast, NULL, lineno, type, turbofish_ast, ZEND_VERIFY_ARITY_KIND_CALL, NULL);
 }
 /* }}} */
 
@@ -4915,7 +5013,7 @@ static void zend_compile_assert(znode *result, zend_ast_list *args, zend_string 
 			args = (zend_ast_list *)zend_ast_list_add((zend_ast *) args, arg);
 		}
 
-		zend_compile_call_common(result, (zend_ast*)args, fbc, lineno, type);
+		zend_compile_call_common(result, (zend_ast*)args, fbc, lineno, type, NULL, ZEND_VERIFY_ARITY_KIND_CALL, NULL);
 
 		opline = &CG(active_op_array)->opcodes[check_op_number];
 		opline->op2.opline_num = get_next_op_number();
@@ -5241,7 +5339,7 @@ static uint32_t zend_compile_frameless_icall(znode *result, const zend_ast_list 
 	return zend_compile_frameless_icall_ex(result, args, fbc, frameless_function_info, type);
 }
 
-static void zend_compile_ns_call(znode *result, const znode *name_node, zend_ast *args_ast, uint32_t lineno, uint32_t type) /* {{{ */
+static void zend_compile_ns_call(znode *result, const znode *name_node, zend_ast *args_ast, zend_ast *turbofish_ast, uint32_t lineno, uint32_t type) /* {{{ */
 {
 	int name_constants = zend_add_ns_func_name_literal(Z_STR(name_node->u.constant));
 
@@ -5276,7 +5374,7 @@ static void zend_compile_ns_call(znode *result, const znode *name_node, zend_ast
 	opline->op2_type = IS_CONST;
 	opline->op2.constant = name_constants;
 	opline->result.num = zend_alloc_cache_slot();
-	zend_compile_call_common(result, args_ast, NULL, lineno, type);
+	zend_compile_call_common(result, args_ast, NULL, lineno, type, turbofish_ast, ZEND_VERIFY_ARITY_KIND_CALL, NULL);
 
 	/* Compile frameless call. */
 	if (frameless_function_info) {
@@ -5827,7 +5925,7 @@ static bool zend_compile_parent_property_hook_call(znode *result, const zend_ast
 	opline->op1.constant = zend_add_literal_string(&property_name);
 	opline->op2.num = hook_kind;
 
-	zend_compile_call_common(result, args_ast, NULL, zend_ast_get_lineno(method_ast), BP_VAR_R);
+	zend_compile_call_common(result, args_ast, NULL, zend_ast_get_lineno(method_ast), BP_VAR_R, NULL, ZEND_VERIFY_ARITY_KIND_CALL, NULL);
 
 	return true;
 }
@@ -5836,24 +5934,26 @@ static void zend_compile_call(znode *result, const zend_ast *ast, uint32_t type)
 {
 	zend_ast *name_ast = ast->child[0];
 	zend_ast *args_ast = ast->child[1];
+	zend_ast *turbofish_ast = ast->child[2];
 	bool is_callable_convert = args_ast->kind == ZEND_AST_CALLABLE_CONVERT;
 
 	znode name_node;
 
 	if (name_ast->kind != ZEND_AST_ZVAL || Z_TYPE_P(zend_ast_get_zval(name_ast)) != IS_STRING) {
 		zend_compile_expr(&name_node, name_ast);
-		zend_compile_dynamic_call(result, &name_node, args_ast, ast->lineno, type);
+		zend_compile_dynamic_call(result, &name_node, args_ast, turbofish_ast, ast->lineno, type);
 		return;
 	}
 
 	{
 		bool runtime_resolution = zend_compile_function_name(&name_node, name_ast);
 		if (runtime_resolution) {
-			if (zend_string_equals_literal_ci(zend_ast_get_str(name_ast), "assert")
+			if (turbofish_ast == NULL
+					&& zend_string_equals_literal_ci(zend_ast_get_str(name_ast), "assert")
 					&& !is_callable_convert) {
 				zend_compile_assert(result, zend_ast_get_list(args_ast), Z_STR(name_node.u.constant), NULL, ast->lineno, type);
 			} else {
-				zend_compile_ns_call(result, &name_node, args_ast, ast->lineno, type);
+				zend_compile_ns_call(result, &name_node, args_ast, turbofish_ast, ast->lineno, type);
 			}
 			return;
 		}
@@ -5867,7 +5967,8 @@ static void zend_compile_call(znode *result, const zend_ast *ast, uint32_t type)
 		zend_op *opline;
 
 		/* Special assert() handling should apply independently of compiler flags. */
-		if (fbc && zend_string_equals_literal(lcname, "assert") && !is_callable_convert) {
+		if (turbofish_ast == NULL
+				&& fbc && zend_string_equals_literal(lcname, "assert") && !is_callable_convert) {
 			zend_compile_assert(result, zend_ast_get_list(args_ast), lcname, fbc, ast->lineno, type);
 			zend_string_release(lcname);
 			zval_ptr_dtor(&name_node.u.constant);
@@ -5878,13 +5979,14 @@ static void zend_compile_call(znode *result, const zend_ast *ast, uint32_t type)
 		 || !fbc_is_finalized(fbc)
 		 || zend_compile_ignore_function(fbc, CG(active_op_array)->filename)) {
 			zend_string_release_ex(lcname, 0);
-			zend_compile_dynamic_call(result, &name_node, args_ast, ast->lineno, type);
+			zend_compile_dynamic_call(result, &name_node, args_ast, turbofish_ast, ast->lineno, type);
 			return;
 		}
 
-		if (!is_callable_convert &&
-		    zend_try_compile_special_func(result, lcname,
-				zend_ast_get_list(args_ast), fbc, type, ast->lineno) == SUCCESS
+		if (turbofish_ast == NULL
+				&& !is_callable_convert
+				&& zend_try_compile_special_func(result, lcname,
+					zend_ast_get_list(args_ast), fbc, type, ast->lineno) == SUCCESS
 		) {
 			zend_string_release_ex(lcname, 0);
 			zval_ptr_dtor(&name_node.u.constant);
@@ -5903,7 +6005,7 @@ static void zend_compile_call(znode *result, const zend_ast *ast, uint32_t type)
 			Z_EXTRA_P(CT_CONSTANT(opline->op2)) = fbc_bucket - CG(function_table)->arData;
 		}
 
-		zend_compile_call_common(result, args_ast, fbc, ast->lineno, type);
+		zend_compile_call_common(result, args_ast, fbc, ast->lineno, type, turbofish_ast, ZEND_VERIFY_ARITY_KIND_CALL, NULL);
 	}
 }
 /* }}} */
@@ -5913,6 +6015,7 @@ static void zend_compile_method_call(znode *result, zend_ast *ast, uint32_t type
 	zend_ast *obj_ast = ast->child[0];
 	zend_ast *method_ast = ast->child[1];
 	zend_ast *args_ast = ast->child[2];
+	zend_ast *turbofish_ast = ast->child[3];
 
 	znode obj_node, method_node;
 	zend_op *opline;
@@ -5967,7 +6070,7 @@ static void zend_compile_method_call(znode *result, zend_ast *ast, uint32_t type
 		}
 	}
 
-	if (zend_compile_call_common(result, args_ast, fbc, zend_ast_get_lineno(method_ast), type)) {
+	if (zend_compile_call_common(result, args_ast, fbc, zend_ast_get_lineno(method_ast), type, turbofish_ast, ZEND_VERIFY_ARITY_KIND_CALL, NULL)) {
 		if (short_circuiting_checkpoint != zend_short_circuiting_checkpoint()) {
 			zend_error_noreturn(E_COMPILE_ERROR,
 				"Cannot combine nullsafe operator with Closure creation");
@@ -6015,6 +6118,7 @@ static void zend_compile_static_call(znode *result, zend_ast *ast, uint32_t type
 	zend_ast *class_ast = ast->child[0];
 	zend_ast *method_ast = ast->child[1];
 	zend_ast *args_ast = ast->child[2];
+	zend_ast *turbofish_ast = ast->child[3];
 
 	znode class_node, method_node;
 	zend_op *opline;
@@ -6082,7 +6186,7 @@ static void zend_compile_static_call(znode *result, zend_ast *ast, uint32_t type
 		}
 	}
 
-	zend_compile_call_common(result, args_ast, fbc, zend_ast_get_lineno(method_ast), type);
+	zend_compile_call_common(result, args_ast, fbc, zend_ast_get_lineno(method_ast), type, turbofish_ast, ZEND_VERIFY_ARITY_KIND_CALL, NULL);
 }
 /* }}} */
 
@@ -6092,6 +6196,7 @@ static void zend_compile_new(znode *result, zend_ast *ast) /* {{{ */
 {
 	zend_ast *class_ast = ast->child[0];
 	zend_ast *args_ast = ast->child[1];
+	zend_ast *turbofish_ast = ast->child[2];
 
 	znode class_node, ctor_result;
 	zend_op *opline;
@@ -6138,7 +6243,7 @@ static void zend_compile_new(znode *result, zend_ast *ast) /* {{{ */
 		fbc = ce->constructor;
 	}
 
-	zend_compile_call_common(&ctor_result, args_ast, fbc, ast->lineno, BP_VAR_R);
+	zend_compile_call_common(&ctor_result, args_ast, fbc, ast->lineno, BP_VAR_R, turbofish_ast, ZEND_VERIFY_ARITY_KIND_NEW, result);
 	zend_do_free(&ctor_result);
 }
 /* }}} */
@@ -8306,6 +8411,7 @@ static void zend_compile_attributes(
 				? ZEND_ATTRIBUTE_STRICT_TYPES : 0;
 			attr = zend_add_attribute(
 				attributes, name, args ? args->children : 0, flags, offset, el->lineno);
+			attr->generic_arity = (uint8_t) el->attr;
 			zend_string_release(name);
 
 			/* Populate arguments */

@@ -67,6 +67,8 @@ typedef struct _zend_attribute {
 	/* Parameter offsets start at 1, everything else uses 0. */
 	uint32_t offset;
 	uint32_t argc;
+	/* Number of generic type arguments at the attribute use-site. */
+	uint8_t generic_arity;
 	zend_attribute_arg args[1];
 } zend_attribute;
 

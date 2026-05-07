@@ -1,9 +1,13 @@
 --TEST--
-Turbofish: many type arguments (extras silently discarded)
+Turbofish: arity must match callee's declared generic parameters
 --FILE--
 <?php
-function f($x) { return $x; }
-var_dump(f::<int, string, float, bool, array, mixed, never, void, null>(7));
+function f<T>($x) { return $x; }
+try {
+    f::<int, string, float>(7);
+} catch (ArgumentCountError $e) {
+    echo $e->getMessage(), "\n";
+}
 ?>
 --EXPECT--
-int(7)
+Too many generic type arguments to f(), 3 passed and exactly 1 expected

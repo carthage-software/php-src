@@ -2,7 +2,7 @@
 Turbofish: nested type arguments
 --FILE--
 <?php
-function f($x) { return $x; }
+function f<T>($x) { return $x; }
 var_dump(f::<array<int, string>>(["a", "b"]));
 ?>
 --EXPECT--
