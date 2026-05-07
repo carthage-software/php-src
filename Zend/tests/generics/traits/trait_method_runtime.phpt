@@ -7,7 +7,7 @@ trait Holder<T : A> {
     public function get(T $x): T { return $x; }
 }
 class Box {
-    use Holder;
+    use Holder<A>;
 }
 
 $a = new A;

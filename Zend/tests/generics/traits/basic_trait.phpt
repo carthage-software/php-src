@@ -7,7 +7,7 @@ trait Holder<T : object> {
     public function get(): T { return $this->value; }
 }
 class Box {
-    use Holder;
+    use Holder<object>;
 }
 $rc = new ReflectionClass('Box');
 echo $rc->getProperty('value')->getType()->getName(), "\n";

@@ -2,7 +2,7 @@
 Reflection: getGenericArgumentsForParentInterface returns args from implements / interface-extends; throws when not ancestor
 --FILE--
 <?php
-interface I<K, V> {}
+interface I<K = mixed, V = mixed> {}
 interface J<T> {}
 interface K1 extends I<int, string> {}
 

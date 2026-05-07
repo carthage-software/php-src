@@ -1845,13 +1845,17 @@ ZEND_API void zend_do_inheritance_ex(zend_class_entry *ce, zend_class_entry *par
 	zend_property_info *property_info;
 	zend_string *key;
 
-	if (parent_ce
-			&& !(ce->ce_flags & ZEND_ACC_INTERFACE)
-			&& ce->generic_types
-			&& ce->generic_types->extends
-			&& ZEND_TYPE_HAS_NAMED_WITH_ARGS(*ce->generic_types->extends)) {
-		zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*ce->generic_types->extends);
-		zend_check_generic_link_arity(parent_ce, named->count, "extends", ce->name);
+	if (parent_ce && !(ce->ce_flags & ZEND_ACC_INTERFACE)) {
+		uint32_t arity = 0;
+		if (ce->generic_types
+				&& ce->generic_types->extends
+				&& ZEND_TYPE_HAS_NAMED_WITH_ARGS(*ce->generic_types->extends)) {
+			arity = ZEND_TYPE_NAMED_WITH_ARGS(*ce->generic_types->extends)->count;
+		}
+
+		if (arity > 0 || parent_ce->generic_parameters) {
+			zend_check_generic_link_arity(parent_ce, arity, "extends", ce->name);
+		}
 	}
 
 	if (UNEXPECTED(ce->ce_flags & ZEND_ACC_INTERFACE)) {
@@ -3528,45 +3532,54 @@ static void zend_check_generic_link_arity(
 	}
 }
 
+static uint32_t zend_lookup_inheritance_arity(const HashTable *side_table, zend_ulong idx)
+{
+	if (!side_table) {
+		return 0;
+	}
+
+	zval *zv = zend_hash_index_find(side_table, idx);
+	if (!zv) {
+		return 0;
+	}
+
+	zend_type *boxed = (zend_type *) Z_PTR_P(zv);
+	if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) {
+		return 0;
+	}
+
+	return ZEND_TYPE_NAMED_WITH_ARGS(*boxed)->count;
+}
+
 static void zend_validate_generic_inheritance_arities(
 		zend_class_entry *ce,
 		zend_class_entry *parent_ce,
 		zend_class_entry **traits_and_interfaces)
 {
 	(void) parent_ce;
-	if (!ce->generic_types) {
+	if (!traits_and_interfaces) {
 		return;
 	}
 
-	if (ce->generic_types->trait_uses && traits_and_interfaces) {
-		zval *zv;
-		zend_ulong idx;
-		ZEND_HASH_FOREACH_NUM_KEY_VAL(ce->generic_types->trait_uses, idx, zv) {
-			zend_type *boxed = (zend_type *) Z_PTR_P(zv);
-			if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) continue;
-			zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
-			if (idx >= ce->num_traits) continue;
-			zend_class_entry *trait_ce = traits_and_interfaces[idx];
-			if (trait_ce) {
-				zend_check_generic_link_arity(trait_ce, named->count, "use", ce->name);
-			}
-		} ZEND_HASH_FOREACH_END();
+	const HashTable *trait_uses_table = ce->generic_types ? ce->generic_types->trait_uses : NULL;
+	for (uint32_t i = 0; i < ce->num_traits; i++) {
+		zend_class_entry *trait_ce = traits_and_interfaces[i];
+		if (!trait_ce) continue;
+		uint32_t arity = zend_lookup_inheritance_arity(trait_uses_table, i);
+		if (arity > 0 || trait_ce->generic_parameters) {
+			zend_check_generic_link_arity(trait_ce, arity, "use", ce->name);
+		}
 	}
 
-	if (ce->generic_types->implements && traits_and_interfaces) {
-		zval *zv;
-		zend_ulong idx;
-		ZEND_HASH_FOREACH_NUM_KEY_VAL(ce->generic_types->implements, idx, zv) {
-			zend_type *boxed = (zend_type *) Z_PTR_P(zv);
-			if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) continue;
-			zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
-			if (idx >= ce->num_interfaces) continue;
-			zend_class_entry *iface_ce = traits_and_interfaces[ce->num_traits + idx];
-			if (iface_ce) {
-				const char *clause = (ce->ce_flags & ZEND_ACC_INTERFACE) ? "extends" : "implements";
-				zend_check_generic_link_arity(iface_ce, named->count, clause, ce->name);
-			}
-		} ZEND_HASH_FOREACH_END();
+	const HashTable *implements_table = ce->generic_types ? ce->generic_types->implements : NULL;
+	const char *clause = (ce->ce_flags & ZEND_ACC_INTERFACE) ? "extends" : "implements";
+	for (uint32_t i = 0; i < ce->num_interfaces; i++) {
+		zend_class_entry *iface_ce = traits_and_interfaces[ce->num_traits + i];
+		if (!iface_ce) continue;
+		uint32_t arity = zend_lookup_inheritance_arity(implements_table, i);
+		if (arity > 0 || iface_ce->generic_parameters) {
+			zend_check_generic_link_arity(iface_ce, arity, clause, ce->name);
+		}
 	}
 }
 

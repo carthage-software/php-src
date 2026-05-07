@@ -2,7 +2,7 @@
 Reflection: getGenericArgumentsForParentClass returns args from extends clause, throws when no parent
 --FILE--
 <?php
-class A<T> {}
+class A<T = mixed> {}
 class B<X, Y> {}
 
 class WithArgs extends A<string> {}
