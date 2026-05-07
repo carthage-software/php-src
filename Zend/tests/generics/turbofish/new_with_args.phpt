@@ -2,7 +2,7 @@
 Turbofish: new with type arguments
 --FILE--
 <?php
-class Box {
+class Box<T> {
     public int $x;
     public function __construct(int $x) { $this->x = $x; }
 }

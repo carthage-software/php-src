@@ -2,7 +2,7 @@
 Generic syntax: turbofish on new with various class-ref forms
 --FILE--
 <?php
-class Box {
+class Box<T> {
     public function __construct(public int $v) {}
 }
 
@@ -17,7 +17,7 @@ $expr = fn() => 'Box';
 $b = new ($expr())::<int>(3);
 echo $b->v, "\n";
 
-class Container {
+class Container<T> {
     public static function make(): self<int> {
         return new self::<int>;
     }

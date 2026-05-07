@@ -7723,6 +7723,13 @@ ZEND_METHOD(ReflectionAttribute, newInstance)
 		}
 	}
 
+	if (attr->data->generic_arity > 0) {
+		zend_check_generic_new_arity(ce, attr->data->generic_arity);
+		if (UNEXPECTED(EG(exception))) {
+			RETURN_THROWS();
+		}
+	}
+
 	zval obj;
 
 	if (SUCCESS != zend_get_attribute_object(&obj, ce, attr->data, attr->scope, attr->filename)) {

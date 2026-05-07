@@ -508,6 +508,7 @@ ZEND_API zend_attribute *zend_add_attribute(HashTable **attributes, zend_string 
 	attr->lineno = lineno;
 	attr->offset = offset;
 	attr->argc = argc;
+	attr->generic_arity = 0;
 
 	/* Initialize arguments to avoid partial initialization in case of fatal errors. */
 	for (uint32_t i = 0; i < argc; i++) {

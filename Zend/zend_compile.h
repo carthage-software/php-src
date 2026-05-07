@@ -187,6 +187,9 @@ ZEND_API void zend_generic_type_table_set_trait_use(zend_generic_type_table *t, 
 ZEND_API void zend_check_generic_param_list_size(zend_ast *list_ast);
 ZEND_API void zend_check_generic_arg_list_size(zend_ast *list_ast);
 
+ZEND_API void zend_check_generic_call_arity(const zend_function *fbc, uint32_t arity);
+ZEND_API void zend_check_generic_new_arity(const zend_class_entry *ce, uint32_t arity);
+
 typedef union _zend_parser_stack_elem {
 	zend_ast *ast;
 	zend_string *str;

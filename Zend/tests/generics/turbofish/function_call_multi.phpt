@@ -2,7 +2,7 @@
 Turbofish: function call with multiple type arguments
 --FILE--
 <?php
-function combine($a, $b) { return [$a, $b]; }
+function combine<A, B>($a, $b) { return [$a, $b]; }
 var_dump(combine::<int, string>(1, "x"));
 ?>
 --EXPECT--

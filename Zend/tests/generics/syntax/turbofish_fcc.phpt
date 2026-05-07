@@ -2,10 +2,10 @@
 Generic syntax: turbofish on first-class callable creation
 --FILE--
 <?php
-function f(int $x): int { return $x * 2; }
+function f<T>(int $x): int { return $x * 2; }
 class C {
-    public static function s(int $x): int { return $x + 100; }
-    public function m(int $x): int { return $x - 1; }
+    public static function s<T>(int $x): int { return $x + 100; }
+    public function m<T>(int $x): int { return $x - 1; }
 }
 
 $f = f::<int>(...);

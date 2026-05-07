@@ -3,7 +3,7 @@ Turbofish: nullsafe method call
 --FILE--
 <?php
 class C {
-    function m($x) { return $x; }
+    function m<T>($x) { return $x; }
 }
 $c = new C;
 var_dump($c?->m::<int>(5));

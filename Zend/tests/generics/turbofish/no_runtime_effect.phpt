@@ -1,12 +1,12 @@
 --TEST--
-Turbofish: produces same result as no turbofish
+Turbofish: with matching arity has zero runtime effect on values
 --FILE--
 <?php
-function f(int $x): int { return $x * 2; }
+function f<T>(int $x): int { return $x * 2; }
 var_dump(f(5));
 var_dump(f::<int>(5));
 var_dump(f::<string>(5));
-var_dump(f::<int, mixed, never>(5));
+var_dump(f::<mixed>(5));
 ?>
 --EXPECT--
 int(10)

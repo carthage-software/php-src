@@ -34,6 +34,13 @@
 ZEND_API zend_class_entry* (*zend_inheritance_cache_get)(zend_class_entry *ce, zend_class_entry *parent, zend_class_entry **traits_and_interfaces) = NULL;
 ZEND_API zend_class_entry* (*zend_inheritance_cache_add)(zend_class_entry *ce, zend_class_entry *proto, zend_class_entry *parent, zend_class_entry **traits_and_interfaces, HashTable *dependencies) = NULL;
 
+static void zend_check_generic_link_arity(
+		const zend_class_entry *target_ce, uint32_t arity,
+		const char *clause, zend_string *child_name);
+static void zend_validate_generic_inheritance_arities(
+		zend_class_entry *ce, zend_class_entry *parent_ce,
+		zend_class_entry **traits_and_interfaces);
+
 /* Unresolved means that class declarations that are currently not available are needed to
  * determine whether the inheritance is valid or not. At runtime UNRESOLVED should be treated
  * as an ERROR. */
@@ -1838,6 +1845,15 @@ ZEND_API void zend_do_inheritance_ex(zend_class_entry *ce, zend_class_entry *par
 	zend_property_info *property_info;
 	zend_string *key;
 
+	if (parent_ce
+			&& !(ce->ce_flags & ZEND_ACC_INTERFACE)
+			&& ce->generic_types
+			&& ce->generic_types->extends
+			&& ZEND_TYPE_HAS_NAMED_WITH_ARGS(*ce->generic_types->extends)) {
+		zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*ce->generic_types->extends);
+		zend_check_generic_link_arity(parent_ce, named->count, "extends", ce->name);
+	}
+
 	if (UNEXPECTED(ce->ce_flags & ZEND_ACC_INTERFACE)) {
 		/* Interface can only inherit other interfaces */
 		if (UNEXPECTED(!(parent_ce->ce_flags & ZEND_ACC_INTERFACE))) {
@@ -3482,6 +3498,78 @@ static zend_class_entry *zend_lazy_class_load(const zend_class_entry *pce)
 		} while (0)
 #endif
 
+static void zend_check_generic_link_arity(
+		const zend_class_entry *target_ce,
+		uint32_t arity,
+		const char *clause,
+		zend_string *child_name)
+{
+	uint32_t total = target_ce->generic_parameters ? target_ce->generic_parameters->count : 0;
+	uint32_t required = 0;
+	if (target_ce->generic_parameters) {
+		while (required < total
+				&& !ZEND_TYPE_IS_SET(target_ce->generic_parameters->parameters[required].default_type)) {
+			required++;
+		}
+	}
+
+	if (arity > total) {
+		zend_error_noreturn(E_COMPILE_ERROR,
+			"Too many generic type arguments to %s %s in %s, %u passed and %s %u expected",
+			clause, ZSTR_VAL(target_ce->name), ZSTR_VAL(child_name), arity,
+			required == total ? "exactly" : "at most", total);
+	}
+
+	if (arity < required) {
+		zend_error_noreturn(E_COMPILE_ERROR,
+			"Too few generic type arguments to %s %s in %s, %u passed and %s %u expected",
+			clause, ZSTR_VAL(target_ce->name), ZSTR_VAL(child_name), arity,
+			required == total ? "exactly" : "at least", required);
+	}
+}
+
+static void zend_validate_generic_inheritance_arities(
+		zend_class_entry *ce,
+		zend_class_entry *parent_ce,
+		zend_class_entry **traits_and_interfaces)
+{
+	(void) parent_ce;
+	if (!ce->generic_types) {
+		return;
+	}
+
+	if (ce->generic_types->trait_uses && traits_and_interfaces) {
+		zval *zv;
+		zend_ulong idx;
+		ZEND_HASH_FOREACH_NUM_KEY_VAL(ce->generic_types->trait_uses, idx, zv) {
+			zend_type *boxed = (zend_type *) Z_PTR_P(zv);
+			if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) continue;
+			zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
+			if (idx >= ce->num_traits) continue;
+			zend_class_entry *trait_ce = traits_and_interfaces[idx];
+			if (trait_ce) {
+				zend_check_generic_link_arity(trait_ce, named->count, "use", ce->name);
+			}
+		} ZEND_HASH_FOREACH_END();
+	}
+
+	if (ce->generic_types->implements && traits_and_interfaces) {
+		zval *zv;
+		zend_ulong idx;
+		ZEND_HASH_FOREACH_NUM_KEY_VAL(ce->generic_types->implements, idx, zv) {
+			zend_type *boxed = (zend_type *) Z_PTR_P(zv);
+			if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) continue;
+			zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
+			if (idx >= ce->num_interfaces) continue;
+			zend_class_entry *iface_ce = traits_and_interfaces[ce->num_traits + idx];
+			if (iface_ce) {
+				const char *clause = (ce->ce_flags & ZEND_ACC_INTERFACE) ? "extends" : "implements";
+				zend_check_generic_link_arity(iface_ce, named->count, clause, ce->name);
+			}
+		} ZEND_HASH_FOREACH_END();
+	}
+}
+
 ZEND_API zend_class_entry *zend_do_link_class(zend_class_entry *ce, zend_string *lc_parent_name, const zend_string *key) /* {{{ */
 {
 	/* Load parent/interface dependencies first, so we can still gracefully abort linking
@@ -3563,6 +3651,8 @@ ZEND_API zend_class_entry *zend_do_link_class(zend_class_entry *ce, zend_string 
 			}
 		}
 	}
+
+	zend_validate_generic_inheritance_arities(ce, parent, traits_and_interfaces);
 
 #ifndef ZEND_WIN32
 	if (ce->ce_flags & ZEND_ACC_ENUM) {
