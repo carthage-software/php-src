@@ -121,6 +121,9 @@ typedef struct _zend_file_context {
 	HashTable seen_symbols;
 } zend_file_context;
 
+/* Maximum number of generic type parameters or arguments at any single position. */
+#define ZEND_GENERIC_MAX_PARAMS 255
+
 C23_ENUM(zend_generic_variance, uint8_t) {
 	ZEND_GENERIC_VARIANCE_INVARIANT     = 0,
 	ZEND_GENERIC_VARIANCE_COVARIANT     = 1,
@@ -180,6 +183,9 @@ ZEND_API void zend_generic_type_table_set_property(zend_generic_type_table *t, z
 ZEND_API void zend_generic_type_table_set_class_constant(zend_generic_type_table *t, zend_string *name, zend_type type);
 ZEND_API void zend_generic_type_table_set_implements(zend_generic_type_table *t, uint32_t idx, zend_type type);
 ZEND_API void zend_generic_type_table_set_trait_use(zend_generic_type_table *t, uint32_t idx, zend_type type);
+
+ZEND_API void zend_check_generic_param_list_size(zend_ast *list_ast);
+ZEND_API void zend_check_generic_arg_list_size(zend_ast *list_ast);
 
 typedef union _zend_parser_stack_elem {
 	zend_ast *ast;
