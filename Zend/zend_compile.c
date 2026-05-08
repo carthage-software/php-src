@@ -8251,6 +8251,7 @@ static zend_type zend_compile_typename_ex(
 		zend_ast *ast, bool force_allow_null, bool *forced_allow_null) /* {{{ */
 {
 	bool is_marked_nullable = ast->attr & ZEND_TYPE_NULLABLE;
+	bool is_t_ref_erasure = false;
 	zend_ast_attr orig_ast_attr = ast->attr;
 	zend_type type = ZEND_TYPE_INIT_NONE(0);
 
@@ -8263,6 +8264,7 @@ static zend_type zend_compile_typename_ex(
 		zend_type_list *type_list;
 		bool is_composite = false;
 		bool has_only_iterable_class = true;
+		bool collapse_union_to_mixed = false;
 		ALLOCA_FLAG(use_heap)
 
 		type_list = do_alloca(ZEND_TYPE_LIST_SIZE(list->children), use_heap);
@@ -8308,6 +8310,16 @@ static zend_type zend_compile_typename_ex(
 			uint32_t single_type_mask = ZEND_TYPE_PURE_MASK(single_type);
 
 			if (single_type_mask == MAY_BE_ANY) {
+				zend_ast *check_ast = type_ast;
+				if (check_ast->kind == ZEND_AST_GENERIC_NAMED_TYPE) {
+					check_ast = check_ast->child[0];
+				}
+
+				if (zend_generic_lookup_name(check_ast) != NULL) {
+					collapse_union_to_mixed = true;
+					break;
+				}
+
 				zend_error_noreturn(E_COMPILE_ERROR, "Type mixed can only be used as a standalone type");
 			}
 			if (ZEND_TYPE_IS_COMPLEX(single_type) && !ZEND_TYPE_IS_ITERABLE_FALLBACK(single_type)) {
@@ -8354,25 +8366,30 @@ static zend_type zend_compile_typename_ex(
 			}
 		}
 
-		if (type_list->num_types) {
-			zend_type_list *list = zend_arena_alloc(
-				&CG(arena), ZEND_TYPE_LIST_SIZE(type_list->num_types));
-			memcpy(list, type_list, ZEND_TYPE_LIST_SIZE(type_list->num_types));
-			ZEND_TYPE_SET_LIST(type, list);
-			ZEND_TYPE_FULL_MASK(type) |= _ZEND_TYPE_ARENA_BIT;
-			/* Inform that the type list is a union type */
-			ZEND_TYPE_FULL_MASK(type) |= _ZEND_TYPE_UNION_BIT;
-		}
+		if (collapse_union_to_mixed) {
+			free_alloca(type_list, use_heap);
+			type = (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_ANY);
+		} else {
+			if (type_list->num_types) {
+				zend_type_list *list = zend_arena_alloc(
+					&CG(arena), ZEND_TYPE_LIST_SIZE(type_list->num_types));
+				memcpy(list, type_list, ZEND_TYPE_LIST_SIZE(type_list->num_types));
+				ZEND_TYPE_SET_LIST(type, list);
+				ZEND_TYPE_FULL_MASK(type) |= _ZEND_TYPE_ARENA_BIT;
+				/* Inform that the type list is a union type */
+				ZEND_TYPE_FULL_MASK(type) |= _ZEND_TYPE_UNION_BIT;
+			}
 
-		free_alloca(type_list, use_heap);
+			free_alloca(type_list, use_heap);
 
-		uint32_t type_mask = ZEND_TYPE_FULL_MASK(type);
-		if ((type_mask & MAY_BE_OBJECT) &&
-				((!has_only_iterable_class && ZEND_TYPE_IS_COMPLEX(type)) || (type_mask & MAY_BE_STATIC))) {
-			zend_string *type_str = zend_type_to_string(type);
-			zend_error_noreturn(E_COMPILE_ERROR,
-				"Type %s contains both object and a class type, which is redundant",
-				ZSTR_VAL(type_str));
+			uint32_t type_mask = ZEND_TYPE_FULL_MASK(type);
+			if ((type_mask & MAY_BE_OBJECT) &&
+					((!has_only_iterable_class && ZEND_TYPE_IS_COMPLEX(type)) || (type_mask & MAY_BE_STATIC))) {
+				zend_string *type_str = zend_type_to_string(type);
+				zend_error_noreturn(E_COMPILE_ERROR,
+					"Type %s contains both object and a class type, which is redundant",
+					ZSTR_VAL(type_str));
+			}
 		}
 	} else if (ast->kind == ZEND_AST_TYPE_INTERSECTION) {
 		const zend_ast_list *list = zend_ast_get_list(ast);
@@ -8441,17 +8458,31 @@ static zend_type zend_compile_typename_ex(
 			ZEND_TYPE_FULL_MASK(type) |= _ZEND_TYPE_ARENA_BIT;
 		}
 	} else {
+		zend_ast *check_ast = ast;
+		if (check_ast->kind == ZEND_AST_GENERIC_NAMED_TYPE) {
+			check_ast = check_ast->child[0];
+		}
+
+		is_t_ref_erasure = (zend_generic_lookup_name(check_ast) != NULL);
 		type = zend_compile_single_typename(ast);
 	}
 
 	uint32_t type_mask = ZEND_TYPE_PURE_MASK(type);
 
 	if (type_mask == MAY_BE_ANY && is_marked_nullable) {
-		zend_error_noreturn(E_COMPILE_ERROR, "Type mixed cannot be marked as nullable since mixed already includes null");
+		if (!is_t_ref_erasure) {
+			zend_error_noreturn(E_COMPILE_ERROR, "Type mixed cannot be marked as nullable since mixed already includes null");
+		}
+
+		is_marked_nullable = false;
 	}
 
 	if ((type_mask & MAY_BE_NULL) && is_marked_nullable) {
-		zend_error_noreturn(E_COMPILE_ERROR, "null cannot be marked as nullable");
+		if (!is_t_ref_erasure) {
+			zend_error_noreturn(E_COMPILE_ERROR, "null cannot be marked as nullable");
+		}
+
+		is_marked_nullable = false;
 	}
 
 	if (force_allow_null && !is_marked_nullable && !(type_mask & MAY_BE_NULL)) {
