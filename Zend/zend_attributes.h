@@ -69,6 +69,7 @@ typedef struct _zend_attribute {
 	uint32_t argc;
 	/* Number of generic type arguments at the attribute use-site. */
 	uint8_t generic_arity;
+	zend_type *generic_args;
 	zend_attribute_arg args[1];
 } zend_attribute;
 

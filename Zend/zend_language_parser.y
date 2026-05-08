@@ -379,15 +379,13 @@ attribute_decl:
 		class_name optional_call_type_argument_list
 			{
 				uint32_t _ga = $2 ? zend_ast_get_list($2)->children : 0;
-				if ($2) zend_ast_destroy($2);
-				$$ = zend_ast_create(ZEND_AST_ATTRIBUTE, $1, NULL);
+				$$ = zend_ast_create(ZEND_AST_ATTRIBUTE, $1, NULL, $2);
 				$$->attr = (zend_ast_attr) _ga;
 			}
 	|	class_name optional_call_type_argument_list argument_list
 			{
 				uint32_t _ga = $2 ? zend_ast_get_list($2)->children : 0;
-				if ($2) zend_ast_destroy($2);
-				$$ = zend_ast_create(ZEND_AST_ATTRIBUTE, $1, $3);
+				$$ = zend_ast_create(ZEND_AST_ATTRIBUTE, $1, $3, $2);
 				$$->attr = (zend_ast_attr) _ga;
 			}
 ;

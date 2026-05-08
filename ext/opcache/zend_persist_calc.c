@@ -46,6 +46,7 @@
 
 static void zend_persist_zval_calc(zval *z);
 static void zend_persist_op_array_calc(const zval *zv);
+static void zend_persist_type_calc(zend_type *type);
 
 static void zend_hash_persist_calc(const HashTable *ht)
 {
@@ -191,6 +192,11 @@ static void zend_persist_attributes_calc(HashTable *attributes)
 				}
 				zend_persist_zval_calc(&attr->args[i].value);
 			}
+
+			if (attr->generic_args) {
+				ADD_SIZE(sizeof(zend_type));
+				zend_persist_type_calc(attr->generic_args);
+			}
 		} ZEND_HASH_FOREACH_END();
 	}
 }
@@ -207,7 +213,9 @@ static void zend_persist_type_calc(zend_type *type)
 	if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(*type)) {
 		zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*type);
 		ADD_SIZE(ZEND_TYPE_NAMED_WITH_ARGS_SIZE(named->count));
-		ADD_INTERNED_STRING(named->name);
+		if (named->name) {
+			ADD_INTERNED_STRING(named->name);
+		}
 		for (uint32_t i = 0; i < named->count; i++) {
 			zend_persist_type_calc(&named->args[i]);
 		}
@@ -312,6 +320,10 @@ static void zend_persist_generic_type_table_calc(zend_generic_type_table *table)
 
 	if (table->trait_uses) {
 		zend_persist_generic_type_table_ht_calc(table->trait_uses);
+	}
+
+	if (table->turbofish_args) {
+		zend_persist_generic_type_table_ht_calc(table->turbofish_args);
 	}
 }
 
