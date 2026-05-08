@@ -8404,18 +8404,33 @@ static zend_type zend_compile_typename_ex(
 
 		for (uint32_t i = 0; i < list->children; i++) {
 			zend_ast *type_ast = list->child[i];
+			zend_ast *check_ast = type_ast;
+			if (check_ast->kind == ZEND_AST_GENERIC_NAMED_TYPE) {
+				check_ast = check_ast->child[0];
+			}
+			zend_generic_parameter *t_param = zend_generic_lookup_name(check_ast);
 			zend_type single_type = zend_compile_single_typename(type_ast);
 
 			/* An intersection of union types cannot exist so invalidate it
 			 * Currently only can happen with iterable getting canonicalized to Traversable|array */
 			if (ZEND_TYPE_IS_ITERABLE_FALLBACK(single_type)) {
 				zend_string *standard_type_str = zend_type_to_string(single_type);
+				if (t_param) {
+					zend_error_noreturn(E_COMPILE_ERROR,
+						"Type parameter %s with bound %s cannot be part of an intersection type",
+						ZSTR_VAL(t_param->name), ZSTR_VAL(standard_type_str));
+				}
 				zend_error_noreturn(E_COMPILE_ERROR,
 					"Type %s cannot be part of an intersection type", ZSTR_VAL(standard_type_str));
 			}
 			/* An intersection of standard types cannot exist so invalidate it */
 			if (ZEND_TYPE_IS_ONLY_MASK(single_type)) {
 				zend_string *standard_type_str = zend_type_to_string(single_type);
+				if (t_param) {
+					zend_error_noreturn(E_COMPILE_ERROR,
+						"Type parameter %s with bound %s cannot be part of an intersection type",
+						ZSTR_VAL(t_param->name), ZSTR_VAL(standard_type_str));
+				}
 				zend_error_noreturn(E_COMPILE_ERROR,
 					"Type %s cannot be part of an intersection type", ZSTR_VAL(standard_type_str));
 			}
