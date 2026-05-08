@@ -1545,8 +1545,8 @@ static zend_function *zend_maybe_substitute_inherited_method(
 	}
 
 	if (!have) {
-		return NULL
-	};
+		return NULL;
+	}
 
 	zend_function *clone = zend_arena_alloc(&CG(arena), sizeof(zend_op_array));
 	memcpy(clone, parent_fn, sizeof(zend_op_array));
