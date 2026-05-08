@@ -216,6 +216,10 @@ ZEND_API void zend_generic_type_table_destroy(zend_generic_type_table *table) {
 		zend_hash_destroy(table->trait_uses);
 		FREE_HASHTABLE(table->trait_uses);
 	}
+	if (table->turbofish_args) {
+		zend_hash_destroy(table->turbofish_args);
+		FREE_HASHTABLE(table->turbofish_args);
+	}
 	efree(table);
 }
 
@@ -279,6 +283,10 @@ ZEND_API void zend_generic_type_table_set_implements(zend_generic_type_table *t,
 
 ZEND_API void zend_generic_type_table_set_trait_use(zend_generic_type_table *t, uint32_t idx, zend_type type) {
 	zend_hash_index_update_ptr(zend_generic_type_table_ensure_indexed(&t->trait_uses), idx, zend_type_box(type));
+}
+
+ZEND_API void zend_generic_type_table_set_turbofish_args(zend_generic_type_table *t, uint32_t op_num, zend_type type) {
+	zend_hash_index_update_ptr(zend_generic_type_table_ensure_indexed(&t->turbofish_args), op_num, zend_type_box(type));
 }
 
 ZEND_API void zend_free_internal_arg_info(zend_internal_function *function,

@@ -160,6 +160,7 @@ typedef struct _zend_generic_type_table {
 	HashTable   *class_constants;   /* zend_string * -> zend_type * */
 	HashTable   *implements;        /* implements index -> zend_type * */
 	HashTable   *trait_uses;        /* trait-use index -> zend_type * */
+	HashTable   *turbofish_args;    /* opline->extended_value -> zend_type * (NAMED_WITH_ARGS holding the call-site type arguments); index is stable across optimizer reorderings */
 } zend_generic_type_table;
 
 /* Compile-time linked stack of in-scope generic type parameters. */
@@ -183,12 +184,14 @@ ZEND_API void zend_generic_type_table_set_property(zend_generic_type_table *t, z
 ZEND_API void zend_generic_type_table_set_class_constant(zend_generic_type_table *t, zend_string *name, zend_type type);
 ZEND_API void zend_generic_type_table_set_implements(zend_generic_type_table *t, uint32_t idx, zend_type type);
 ZEND_API void zend_generic_type_table_set_trait_use(zend_generic_type_table *t, uint32_t idx, zend_type type);
+ZEND_API void zend_generic_type_table_set_turbofish_args(zend_generic_type_table *t, uint32_t op_num, zend_type type);
 
 ZEND_API void zend_check_generic_param_list_size(zend_ast *list_ast);
 ZEND_API void zend_check_generic_arg_list_size(zend_ast *list_ast);
 
-ZEND_API void zend_check_generic_call_arity(const zend_function *fbc, uint32_t arity);
-ZEND_API void zend_check_generic_new_arity(const zend_class_entry *ce, uint32_t arity);
+ZEND_API void zend_check_generic_call_arguments(const zend_function *fbc, uint32_t arity, const zend_type *args_box);
+ZEND_API void zend_check_generic_new_arguments(const zend_class_entry *ce, uint32_t arity, const zend_type *args_box);
+ZEND_API const zend_type *zend_generic_get_turbofish_args(const zend_op_array *caller_op_array, uint32_t args_id);
 
 typedef union _zend_parser_stack_elem {
 	zend_ast *ast;

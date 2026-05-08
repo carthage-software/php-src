@@ -85,6 +85,7 @@ typedef void (*zend_persist_func_t)(zval*);
 
 static void zend_persist_zval(zval *z);
 static void zend_persist_op_array(zval *zv);
+static void zend_persist_type(zend_type *type);
 
 static const uint32_t uninitialized_bucket[-HT_MIN_MASK] =
 	{HT_INVALID_IDX, HT_INVALID_IDX};
@@ -321,6 +322,11 @@ static HashTable *zend_persist_attributes(HashTable *attributes)
 			zend_persist_zval(&copy->args[i].value);
 		}
 
+		if (copy->generic_args) {
+			copy->generic_args = zend_shared_memdup_put_free(copy->generic_args, sizeof(zend_type));
+			zend_persist_type(copy->generic_args);
+		}
+
 		ZVAL_PTR(v, copy);
 	} ZEND_HASH_FOREACH_END();
 
@@ -370,7 +376,9 @@ static void zend_persist_type(zend_type *type) {
 	if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(*type)) {
 		zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*type);
 		named = zend_shared_memdup_put_free(named, ZEND_TYPE_NAMED_WITH_ARGS_SIZE(named->count));
-		zend_accel_store_interned_string(named->name);
+		if (named->name) {
+			zend_accel_store_interned_string(named->name);
+		}
 		for (uint32_t i = 0; i < named->count; i++) {
 			zend_persist_type(&named->args[i]);
 		}
@@ -500,6 +508,10 @@ static zend_generic_type_table *zend_persist_generic_type_table(zend_generic_typ
 
 	if (persisted->trait_uses) {
 		persisted->trait_uses = zend_persist_generic_type_table_ht(persisted->trait_uses);
+	}
+
+	if (persisted->turbofish_args) {
+		persisted->turbofish_args = zend_persist_generic_type_table_ht(persisted->turbofish_args);
 	}
 
 	return persisted;

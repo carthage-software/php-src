@@ -7736,7 +7736,7 @@ ZEND_METHOD(ReflectionAttribute, newInstance)
 	}
 
 	if (attr->data->generic_arity > 0) {
-		zend_check_generic_new_arity(ce, attr->data->generic_arity);
+		zend_check_generic_new_arguments(ce, attr->data->generic_arity, attr->data->generic_args);
 		if (UNEXPECTED(EG(exception))) {
 			RETURN_THROWS();
 		}

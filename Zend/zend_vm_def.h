@@ -8931,20 +8931,21 @@ ZEND_VM_HOT_HANDLER(211, ZEND_TYPE_ASSERT, CONST, ANY, NUM)
 	ZEND_VM_NEXT_OPCODE_CHECK_EXCEPTION();
 }
 
-ZEND_VM_HANDLER(212, ZEND_VERIFY_GENERIC_ARITY, TMP|UNUSED, UNUSED)
+ZEND_VM_HANDLER(212, ZEND_VERIFY_GENERIC_ARGUMENTS, TMP|UNUSED, UNUSED)
 {
 	USE_OPLINE
 	zend_execute_data *call = EX(call);
 	uint32_t arity = opline->op2.num;
+	const zend_type *args_box = zend_generic_get_turbofish_args(&EX(func)->op_array, opline->extended_value);
 
 	SAVE_OPLINE();
 
 	if (OP1_TYPE == IS_UNUSED) {
-		zend_check_generic_call_arity(call->func, arity);
+		zend_check_generic_call_arguments(call->func, arity, args_box);
 	} else {
 		zval *new_obj = EX_VAR(opline->op1.var);
 		zend_class_entry *ce = Z_OBJCE_P(new_obj);
-		zend_check_generic_new_arity(ce, arity);
+		zend_check_generic_new_arguments(ce, arity, args_box);
 	}
 
 	if (UNEXPECTED(EG(exception))) {

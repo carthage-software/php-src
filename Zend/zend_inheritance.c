@@ -37,9 +37,15 @@ ZEND_API zend_class_entry* (*zend_inheritance_cache_add)(zend_class_entry *ce, z
 static void zend_check_generic_link_arity(
 		const zend_class_entry *target_ce, uint32_t arity,
 		const char *clause, zend_string *child_name);
+static void zend_check_generic_link_bounds(
+		zend_class_entry *target_ce, const zend_type *args_box,
+		const char *clause, zend_class_entry *ce);
 static void zend_validate_generic_inheritance_arities(
 		zend_class_entry *ce, zend_class_entry *parent_ce,
 		zend_class_entry **traits_and_interfaces);
+static void zend_substitute_trait_method_arg_info(
+		zend_function *new_fn, const zend_function *orig_fn,
+		const zend_type *bind_args, uint32_t bind_arity);
 
 /* Unresolved means that class declarations that are currently not available are needed to
  * determine whether the inheritance is valid or not. At runtime UNRESOLVED should be treated
@@ -303,7 +309,7 @@ static zend_class_entry *lookup_class_ex(
 		}
 
 		/* The current class may not be registered yet, so check for it explicitly. */
-		if (zend_string_equals_ci(scope->name, name)) {
+		if (scope && zend_string_equals_ci(scope->name, name)) {
 			return scope;
 		}
 	}
@@ -768,16 +774,259 @@ static inheritance_status zend_perform_covariant_type_check(
 	return INHERITANCE_UNRESOLVED;
 }
 
+/* Direct binding only: the args ce supplies at its own extends/implements
+ * site. For transitive lookups, use zend_get_inheritance_binding_full. */
+static bool zend_get_inheritance_binding(
+		const zend_class_entry *ce,
+		const zend_class_entry *target_ce,
+		const zend_type **out_args,
+		uint32_t *out_arity)
+{
+	if (!ce->generic_types) {
+		return false;
+	}
+
+	if ((ce->ce_flags & ZEND_ACC_RESOLVED_PARENT)
+			&& ce->parent == target_ce && ce->generic_types->extends
+			&& ZEND_TYPE_HAS_NAMED_WITH_ARGS(*ce->generic_types->extends)) {
+		const zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*ce->generic_types->extends);
+		*out_args = named->args;
+		*out_arity = named->count;
+		return true;
+	}
+
+	if (ce->generic_types->implements) {
+		zval *zv;
+		ZEND_HASH_FOREACH_VAL(ce->generic_types->implements, zv) {
+			zend_type *boxed = (zend_type *) Z_PTR_P(zv);
+			if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) continue;
+			zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
+			if (zend_string_equals_ci(named->name, target_ce->name)) {
+				*out_args = named->args;
+				*out_arity = named->count;
+				return true;
+			}
+		} ZEND_HASH_FOREACH_END();
+	}
+
+	if (ce->generic_types->trait_uses) {
+		zval *zv;
+		ZEND_HASH_FOREACH_VAL(ce->generic_types->trait_uses, zv) {
+			zend_type *boxed = (zend_type *) Z_PTR_P(zv);
+			if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) continue;
+			zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
+			if (named->name && zend_string_equals_ci(named->name, target_ce->name)) {
+				*out_args = named->args;
+				*out_arity = named->count;
+				return true;
+			}
+		} ZEND_HASH_FOREACH_END();
+	}
+
+	return false;
+}
+
+/* Substitutes a bare class-scope T-ref with its bound argument. */
+static zend_type zend_substitute_leaf_type_param(
+		zend_type t, const zend_type *args, uint32_t arity)
+{
+	if (!ZEND_TYPE_HAS_TYPE_PARAMETER(t)) return t;
+	const zend_type_parameter_ref *ref = ZEND_TYPE_TYPE_PARAMETER(t);
+	if (ref->origin != ZEND_GENERIC_ORIGIN_CLASS_LIKE) return t;
+	if (ref->index >= arity) return t;
+	return args[ref->index];
+}
+
+static bool zend_get_trait_use_binding(
+		const zend_class_entry *ce, uint32_t trait_index,
+		const zend_type **out_args, uint32_t *out_arity)
+{
+	if (!ce->generic_types || !ce->generic_types->trait_uses) return false;
+	zval *zv = zend_hash_index_find(ce->generic_types->trait_uses, trait_index);
+	if (!zv) return false;
+	zend_type *boxed = (zend_type *) Z_PTR_P(zv);
+	if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) return false;
+	const zend_type_named_with_args *nwa = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
+	*out_args = nwa->args;
+	*out_arity = nwa->count;
+	return true;
+}
+
+static const zend_type *zend_get_trait_property_pre_erasure(
+		const zend_class_entry *trait_ce, zend_string *prop_name)
+{
+	if (!trait_ce->generic_types || !trait_ce->generic_types->properties) return NULL;
+	zval *zv = zend_hash_find(trait_ce->generic_types->properties, prop_name);
+	if (!zv) return NULL;
+	return (const zend_type *) Z_PTR_P(zv);
+}
+
+static zend_class_entry *zend_find_interface_by_name(
+		const zend_class_entry *ce, const zend_string *name)
+{
+	/* ce->interfaces[] is only meaningful once resolution has populated it. */
+	if (!(ce->ce_flags & ZEND_ACC_RESOLVED_INTERFACES)) {
+		return NULL;
+	}
+	for (uint32_t i = 0; i < ce->num_interfaces; i++) {
+		if (ce->interfaces[i] && zend_string_equals_ci(ce->interfaces[i]->name, name)) {
+			return ce->interfaces[i];
+		}
+	}
+	return NULL;
+}
+
+/* Walks the inheritance chain and composes substitutions when ce's binding
+ * for `target` is transitive. */
+static bool zend_get_inheritance_binding_full(
+		const zend_class_entry *ce,
+		const zend_class_entry *target,
+		zend_type *out_args,
+		uint32_t out_capacity,
+		uint32_t *out_arity)
+{
+	const zend_type *direct_args;
+	if (zend_get_inheritance_binding(ce, target, &direct_args, out_arity)) {
+		if (*out_arity > out_capacity) return false;
+		for (uint32_t i = 0; i < *out_arity; i++) {
+			out_args[i] = direct_args[i];
+		}
+		return true;
+	}
+
+	if (!ce->generic_types) return false;
+
+	if ((ce->ce_flags & ZEND_ACC_RESOLVED_PARENT)
+			&& ce->parent && ce->generic_types->extends) {
+		zend_type intermediate_args[ZEND_GENERIC_MAX_PARAMS];
+		uint32_t intermediate_arity;
+		if (zend_get_inheritance_binding_full(ce->parent, target,
+				intermediate_args, ZEND_GENERIC_MAX_PARAMS, &intermediate_arity)) {
+			const zend_type *ce_to_parent;
+			uint32_t ce_to_parent_arity;
+			if (zend_get_inheritance_binding(ce, ce->parent, &ce_to_parent, &ce_to_parent_arity)) {
+				if (intermediate_arity > out_capacity) return false;
+				for (uint32_t i = 0; i < intermediate_arity; i++) {
+					out_args[i] = zend_substitute_leaf_type_param(
+						intermediate_args[i], ce_to_parent, ce_to_parent_arity);
+				}
+				*out_arity = intermediate_arity;
+				return true;
+			}
+		}
+	}
+
+	if (ce->generic_types->implements) {
+		zval *zv;
+		ZEND_HASH_FOREACH_VAL(ce->generic_types->implements, zv) {
+			zend_type *boxed = (zend_type *) Z_PTR_P(zv);
+			if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) continue;
+			zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
+			zend_class_entry *intermediate = zend_find_interface_by_name(ce, named->name);
+			if (!intermediate || intermediate == target) continue;
+
+			zend_type intermediate_args[ZEND_GENERIC_MAX_PARAMS];
+			uint32_t intermediate_arity;
+			if (!zend_get_inheritance_binding_full(intermediate, target,
+					intermediate_args, ZEND_GENERIC_MAX_PARAMS, &intermediate_arity)) {
+				continue;
+			}
+			if (intermediate_arity > out_capacity) return false;
+			for (uint32_t i = 0; i < intermediate_arity; i++) {
+				out_args[i] = zend_substitute_leaf_type_param(
+					intermediate_args[i], named->args, named->count);
+			}
+			*out_arity = intermediate_arity;
+			return true;
+		} ZEND_HASH_FOREACH_END();
+	}
+
+	return false;
+}
+
+/* Fills out_args with target_ce's parameter defaults if every parameter
+ * has one. */
+static bool zend_get_target_default_args(
+		const zend_class_entry *target_ce,
+		zend_type *out_args, uint32_t out_capacity, uint32_t *out_arity)
+{
+	if (!target_ce->generic_parameters) return false;
+	uint32_t total = target_ce->generic_parameters->count;
+	if (total > out_capacity) return false;
+	for (uint32_t i = 0; i < total; i++) {
+		zend_type d = target_ce->generic_parameters->parameters[i].default_type;
+		if (!ZEND_TYPE_IS_SET(d)) return false;
+		out_args[i] = d;
+	}
+	*out_arity = total;
+	return true;
+}
+
+/* If ce supplies type arguments to proto's declaring scope (directly,
+ * transitively, or via parameter defaults), returns proto's pre-erasure type
+ * with class-scope T-refs substituted. */
+static zend_type zend_substitute_proto_type(
+		zend_type fallback,
+		const zend_type *pre_erasure,
+		const zend_function *proto,
+		zend_class_entry *ce)
+{
+	if (!ce || !pre_erasure) {
+		return fallback;
+	}
+
+	if (!ZEND_TYPE_HAS_TYPE_PARAMETER(*pre_erasure)
+			|| ZEND_TYPE_TYPE_PARAMETER(*pre_erasure)->origin != ZEND_GENERIC_ORIGIN_CLASS_LIKE) {
+		return fallback;
+	}
+
+	zend_class_entry *proto_scope = proto->common.scope;
+	if (!proto_scope || !proto_scope->generic_parameters) {
+		return fallback;
+	}
+
+	zend_type args[ZEND_GENERIC_MAX_PARAMS];
+	uint32_t arity;
+	if (!zend_get_inheritance_binding_full(ce, proto_scope, args, ZEND_GENERIC_MAX_PARAMS, &arity)
+			&& !zend_get_target_default_args(proto_scope, args, ZEND_GENERIC_MAX_PARAMS, &arity)) {
+		return fallback;
+	}
+
+	zend_type substituted = zend_substitute_leaf_type_param(*pre_erasure, args, arity);
+	if (ZEND_TYPE_HAS_TYPE_PARAMETER(substituted)) {
+		return fallback;
+	}
+
+    return substituted;
+}
+
+static const zend_type *zend_get_param_pre_erasure(const zend_function *proto, uint32_t param_idx)
+{
+	if (!ZEND_USER_CODE(proto->common.type)) return NULL;
+	const zend_op_array *op_array = &proto->op_array;
+	if (!op_array->generic_types || !op_array->generic_types->parameters) return NULL;
+	return zend_hash_index_find_ptr(op_array->generic_types->parameters, param_idx);
+}
+
+static const zend_type *zend_get_return_pre_erasure(const zend_function *proto)
+{
+	if (!ZEND_USER_CODE(proto->common.type)) return NULL;
+	const zend_op_array *op_array = &proto->op_array;
+	if (!op_array->generic_types) return NULL;
+	return op_array->generic_types->return_type;
+}
+
 static inheritance_status zend_do_perform_arg_type_hint_check(
 		zend_class_entry *fe_scope, const zend_arg_info *fe_arg_info,
-		zend_class_entry *proto_scope, const zend_arg_info *proto_arg_info) /* {{{ */
+		zend_class_entry *proto_scope, const zend_arg_info *proto_arg_info,
+		zend_type proto_type) /* {{{ */
 {
 	if (!ZEND_TYPE_IS_SET(fe_arg_info->type) || ZEND_TYPE_PURE_MASK(fe_arg_info->type) == MAY_BE_ANY) {
 		/* Child with no type or mixed type is always compatible */
 		return INHERITANCE_SUCCESS;
 	}
 
-	if (!ZEND_TYPE_IS_SET(proto_arg_info->type)) {
+	if (!ZEND_TYPE_IS_SET(proto_type)) {
 		/* Child defines a type, but parent doesn't, violates LSP */
 		return INHERITANCE_ERROR;
 	}
@@ -785,7 +1034,7 @@ static inheritance_status zend_do_perform_arg_type_hint_check(
 	/* Contravariant type check is performed as a covariant type check with swapped
 	 * argument order. */
 	return zend_perform_covariant_type_check(
-		proto_scope, proto_arg_info->type, fe_scope, fe_arg_info->type);
+		proto_scope, proto_type, fe_scope, fe_arg_info->type);
 }
 /* }}} */
 
@@ -794,7 +1043,8 @@ static inheritance_status zend_do_perform_arg_type_hint_check(
  * the method was declared in. */
 static inheritance_status zend_do_perform_implementation_check(
 		const zend_function *fe, zend_class_entry *fe_scope,
-		const zend_function *proto, zend_class_entry *proto_scope) /* {{{ */
+		const zend_function *proto, zend_class_entry *proto_scope,
+		zend_class_entry *ce) /* {{{ */
 {
 	uint32_t num_args, proto_num_args, fe_num_args;
 	inheritance_status status, local_status;
@@ -855,8 +1105,15 @@ static inheritance_status zend_do_perform_implementation_check(
 			return INHERITANCE_ERROR;
 		}
 
+		uint32_t proto_param_idx = i < proto_num_args ? i : proto_num_args - 1;
+		zend_type proto_type = zend_substitute_proto_type(
+			proto_arg_info->type,
+			zend_get_param_pre_erasure(proto, proto_param_idx),
+			proto,
+			ce
+		);
 		local_status = zend_do_perform_arg_type_hint_check(
-			fe_scope, fe_arg_info, proto_scope, proto_arg_info);
+			fe_scope, fe_arg_info, proto_scope, proto_arg_info, proto_type);
 
 		if (UNEXPECTED(local_status != INHERITANCE_SUCCESS)) {
 			if (UNEXPECTED(local_status == INHERITANCE_ERROR)) {
@@ -886,8 +1143,12 @@ static inheritance_status zend_do_perform_implementation_check(
 			return status;
 		}
 
+		zend_type proto_return_type = zend_substitute_proto_type(
+			proto->common.arg_info[-1].type,
+			zend_get_return_pre_erasure(proto),
+			proto, ce);
 		local_status = zend_perform_covariant_type_check(
-			fe_scope, fe->common.arg_info[-1].type, proto_scope, proto->common.arg_info[-1].type);
+			fe_scope, fe->common.arg_info[-1].type, proto_scope, proto_return_type);
 
 		if (UNEXPECTED(local_status != INHERITANCE_SUCCESS)) {
 			if (local_status == INHERITANCE_ERROR
@@ -1106,7 +1367,7 @@ static void perform_delayable_implementation_check(
 		const zend_function *proto, zend_class_entry *proto_scope)
 {
 	inheritance_status status =
-		zend_do_perform_implementation_check(fe, fe_scope, proto, proto_scope);
+		zend_do_perform_implementation_check(fe, fe_scope, proto, proto_scope, ce);
 	if (UNEXPECTED(status != INHERITANCE_SUCCESS)) {
 		if (EXPECTED(status == INHERITANCE_UNRESOLVED)) {
 			add_compatibility_obligation(ce, fe, fe_scope, proto, proto_scope);
@@ -1235,8 +1496,9 @@ static inheritance_status do_inheritance_check_on_method(
 
 	if (flags & ZEND_INHERITANCE_CHECK_PROTO) {
 		if (flags & ZEND_INHERITANCE_CHECK_SILENT) {
-			return zend_do_perform_implementation_check(child, child_scope, parent, parent_scope);
+			return zend_do_perform_implementation_check(child, child_scope, parent, parent_scope, ce);
 		}
+
 		perform_delayable_implementation_check(ce, child, child_scope, parent, parent_scope);
 	}
 
@@ -1251,6 +1513,53 @@ static inheritance_status do_inheritance_check_on_method(
 	return INHERITANCE_SUCCESS;
 }
 /* }}} */
+
+static zend_function *zend_maybe_substitute_inherited_method(
+		zend_function *parent_fn, zend_class_entry *ce)
+{
+	if (parent_fn->type != ZEND_USER_FUNCTION) {
+		return NULL;
+	}
+
+	if (!parent_fn->common.scope || !parent_fn->common.scope->generic_parameters) {
+		return NULL;
+	}
+
+	const zend_op_array *op = &parent_fn->op_array;
+	if (!op->generic_types) {
+		return NULL;
+	}
+
+	if (!op->generic_types->parameters && !op->generic_types->return_type) {
+		return NULL;
+	}
+
+	zend_class_entry *defining_ce = parent_fn->common.scope;
+	zend_type bound_args[ZEND_GENERIC_MAX_PARAMS];
+	uint32_t bound_arity = 0;
+	bool have = zend_get_inheritance_binding_full(
+		ce, defining_ce, bound_args, ZEND_GENERIC_MAX_PARAMS, &bound_arity);
+
+	if (!have) {
+		have = zend_get_target_default_args(defining_ce, bound_args, ZEND_GENERIC_MAX_PARAMS, &bound_arity);
+	}
+
+	if (!have) {
+		return NULL
+	};
+
+	zend_function *clone = zend_arena_alloc(&CG(arena), sizeof(zend_op_array));
+	memcpy(clone, parent_fn, sizeof(zend_op_array));
+	clone->op_array.fn_flags &= ~ZEND_ACC_IMMUTABLE;
+
+	zend_substitute_trait_method_arg_info(clone, parent_fn, bound_args, bound_arity);
+	if (clone->op_array.arg_info == parent_fn->op_array.arg_info) {
+		return NULL;
+	}
+
+	function_add_ref(clone);
+	return clone;
+}
 
 static void do_inherit_method(zend_string *key, zend_function *parent, zend_class_entry *ce, bool is_interface, uint32_t flags) /* {{{ */
 {
@@ -1272,7 +1581,8 @@ static void do_inherit_method(zend_string *key, zend_function *parent, zend_clas
 			ce->ce_flags |= ZEND_ACC_IMPLICIT_ABSTRACT_CLASS;
 		}
 
-		parent = zend_duplicate_function(parent, ce);
+		zend_function *substituted = zend_maybe_substitute_inherited_method(parent, ce);
+		parent = substituted ? substituted : zend_duplicate_function(parent, ce);
 
 		if (!is_interface) {
 			_zend_hash_append_ptr(&ce->function_table, key, parent);
@@ -1580,7 +1890,65 @@ static void do_inherit_property(zend_property_info *parent_info, zend_string *ke
 			}
 		}
 
-		_zend_hash_append_ptr(&ce->properties_info, key, parent_info);
+		zend_property_info *info = parent_info;
+		if (parent_info->ce->generic_types && parent_info->ce->generic_types->properties) {
+			zval *zv = zend_hash_find(parent_info->ce->generic_types->properties, key);
+			if (zv) {
+				const zend_type *pre_erasure = (const zend_type *) Z_PTR_P(zv);
+				zend_type bound_args[ZEND_GENERIC_MAX_PARAMS];
+				uint32_t bound_arity = 0;
+				bool have_args = zend_get_inheritance_binding_full(
+					ce, parent_info->ce, bound_args, ZEND_GENERIC_MAX_PARAMS, &bound_arity);
+
+				if (!have_args) {
+					have_args = zend_get_target_default_args(
+						parent_info->ce, bound_args, ZEND_GENERIC_MAX_PARAMS, &bound_arity);
+				}
+
+				if (have_args) {
+					zend_type sub = zend_substitute_leaf_type_param(*pre_erasure, bound_args, bound_arity);
+					if (!ZEND_TYPE_HAS_TYPE_PARAMETER(sub)) {
+						zend_property_info *clone = zend_arena_alloc(&CG(arena), sizeof(*clone));
+						*clone = *parent_info;
+						clone->type = sub;
+						zend_type_copy_ctor(&clone->type, /* use_arena */ true, /* persistent */ false);
+
+						if (hooks && (hooks[ZEND_PROPERTY_HOOK_GET] || hooks[ZEND_PROPERTY_HOOK_SET])) {
+							zend_function **clone_hooks = zend_arena_alloc(
+								&CG(arena), ZEND_PROPERTY_HOOK_STRUCT_SIZE);
+							memcpy(clone_hooks, hooks, ZEND_PROPERTY_HOOK_STRUCT_SIZE);
+
+							for (uint32_t hi = 0; hi < ZEND_PROPERTY_HOOK_COUNT; hi++) {
+								zend_function *orig = hooks[hi];
+								if (!orig) continue;
+
+								uint32_t num_args = orig->op_array.num_args;
+								if (orig->op_array.fn_flags & ZEND_ACC_VARIADIC) num_args++;
+								size_t arg_info_block = sizeof(zend_arg_info) * (num_args + 1);
+
+								zend_arg_info *new_arg_info = zend_arena_alloc(&CG(arena), arg_info_block);
+								memcpy(new_arg_info, orig->op_array.arg_info - 1, arg_info_block);
+								uint32_t slot = (hi == ZEND_PROPERTY_HOOK_GET) ? 0 : 1;
+								new_arg_info[slot].type = sub;
+								zend_type_copy_ctor(&new_arg_info[slot].type, true, false);
+
+								zend_function *clone_fn = zend_arena_alloc(&CG(arena), sizeof(zend_op_array));
+								memcpy(clone_fn, orig, sizeof(zend_op_array));
+								clone_fn->op_array.arg_info = new_arg_info + 1;
+
+								clone_hooks[hi] = clone_fn;
+							}
+
+							clone->hooks = clone_hooks;
+						}
+
+						info = clone;
+					}
+				}
+			}
+		}
+
+		_zend_hash_append_ptr(&ce->properties_info, key, info);
 	}
 }
 /* }}} */
@@ -1846,16 +2214,20 @@ ZEND_API void zend_do_inheritance_ex(zend_class_entry *ce, zend_class_entry *par
 	zend_string *key;
 
 	if (parent_ce && !(ce->ce_flags & ZEND_ACC_INTERFACE)) {
+		const zend_type *extends_args = NULL;
 		uint32_t arity = 0;
 		if (ce->generic_types
 				&& ce->generic_types->extends
 				&& ZEND_TYPE_HAS_NAMED_WITH_ARGS(*ce->generic_types->extends)) {
-			arity = ZEND_TYPE_NAMED_WITH_ARGS(*ce->generic_types->extends)->count;
+			extends_args = ce->generic_types->extends;
+			arity = ZEND_TYPE_NAMED_WITH_ARGS(*extends_args)->count;
 		}
 
 		if (arity > 0 || parent_ce->generic_parameters) {
 			zend_check_generic_link_arity(parent_ce, arity, "extends", ce->name);
 		}
+
+		zend_check_generic_link_bounds(parent_ce, extends_args, "extends", ce);
 	}
 
 	if (UNEXPECTED(ce->ce_flags & ZEND_ACC_INTERFACE)) {
@@ -2372,6 +2744,76 @@ static zend_class_entry *fixup_trait_scope(const zend_function *fn, zend_class_e
 	return fn->common.scope->ce_flags & ZEND_ACC_TRAIT ? ce : fn->common.scope;
 }
 
+static const zend_type_named_with_args *zend_find_trait_use_binding_by_name(
+		const zend_class_entry *ce, zend_string *trait_name)
+{
+	if (!ce->generic_types || !ce->generic_types->trait_uses) return NULL;
+	zval *zv;
+	ZEND_HASH_FOREACH_VAL(ce->generic_types->trait_uses, zv) {
+		zend_type *boxed = (zend_type *) Z_PTR_P(zv);
+		if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) continue;
+		const zend_type_named_with_args *nwa = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
+		if (nwa->name && zend_string_equals_ci(nwa->name, trait_name)) {
+			return nwa;
+		}
+	} ZEND_HASH_FOREACH_END();
+
+	return NULL;
+}
+
+static void zend_substitute_trait_method_arg_info(
+		zend_function *new_fn, const zend_function *orig_fn,
+		const zend_type *bind_args, uint32_t bind_arity)
+{
+	if (orig_fn->type != ZEND_USER_FUNCTION) return;
+	const zend_op_array *orig_op = &orig_fn->op_array;
+	if (!orig_op->generic_types) {
+		return;
+	}
+
+	if (!orig_op->generic_types->parameters && !orig_op->generic_types->return_type) {
+		return;
+	}
+
+	uint32_t num_args = orig_op->num_args;
+	if (orig_op->fn_flags & ZEND_ACC_VARIADIC) num_args++;
+	bool has_return = (orig_op->fn_flags & ZEND_ACC_HAS_RETURN_TYPE) != 0;
+	uint32_t total = num_args + (has_return ? 1 : 0);
+	if (total == 0) {
+		return;
+	}
+
+	const zend_arg_info *orig_block = has_return ? orig_op->arg_info - 1 : orig_op->arg_info;
+	zend_arg_info *new_block = zend_arena_alloc(&CG(arena), sizeof(zend_arg_info) * total);
+	memcpy(new_block, orig_block, sizeof(zend_arg_info) * total);
+
+	uint32_t return_slot_offset = has_return ? 1 : 0;
+
+	if (has_return && orig_op->generic_types->return_type) {
+		zend_type sub = zend_substitute_leaf_type_param(
+			*orig_op->generic_types->return_type, bind_args, bind_arity);
+		if (!ZEND_TYPE_HAS_TYPE_PARAMETER(sub)) {
+			new_block[0].type = sub;
+			zend_type_copy_ctor(&new_block[0].type, true, false);
+		}
+	}
+
+	if (orig_op->generic_types->parameters) {
+		zval *zv;
+		zend_ulong idx;
+		ZEND_HASH_FOREACH_NUM_KEY_VAL(orig_op->generic_types->parameters, idx, zv) {
+			if (idx >= num_args) continue;
+			zend_type *pre_erasure = (zend_type *) Z_PTR_P(zv);
+			zend_type sub = zend_substitute_leaf_type_param(*pre_erasure, bind_args, bind_arity);
+			if (ZEND_TYPE_HAS_TYPE_PARAMETER(sub)) continue;
+			new_block[return_slot_offset + idx].type = sub;
+			zend_type_copy_ctor(&new_block[return_slot_offset + idx].type, true, false);
+		} ZEND_HASH_FOREACH_END();
+	}
+
+	new_fn->op_array.arg_info = has_return ? new_block + 1 : new_block;
+}
+
 static void zend_add_trait_method(zend_class_entry *ce, zend_string *name, zend_string *key, zend_function *fn) /* {{{ */
 {
 	zend_function *existing_fn = NULL;
@@ -2426,6 +2868,24 @@ static void zend_add_trait_method(zend_class_entry *ce, zend_string *name, zend_
 	/* Reassign method name, in case it is an alias. */
 	new_fn->common.function_name = name;
 	function_add_ref(new_fn);
+
+	if (fn->type == ZEND_USER_FUNCTION && fn->common.scope && fn->common.scope->generic_parameters) {
+		const zend_type_named_with_args *binding = zend_find_trait_use_binding_by_name(ce, fn->common.scope->name);
+		zend_type default_args[ZEND_GENERIC_MAX_PARAMS];
+		const zend_type *bind_args = NULL;
+		uint32_t bind_arity = 0;
+		if (binding) {
+			bind_args = binding->args;
+			bind_arity = binding->count;
+		} else if (zend_get_target_default_args(fn->common.scope, default_args, ZEND_GENERIC_MAX_PARAMS, &bind_arity)) {
+			bind_args = default_args;
+		}
+
+		if (bind_args) {
+			zend_substitute_trait_method_arg_info(new_fn, fn, bind_args, bind_arity);
+		}
+	}
+
 	fn = zend_hash_update_ptr(&ce->function_table, key, new_fn);
 	zend_add_magic_method(ce, fn, key);
 }
@@ -2986,6 +3446,22 @@ static void zend_do_traits_property_binding(zend_class_entry *ce, zend_class_ent
 			zend_string *doc_comment = property_info->doc_comment ? zend_string_copy(property_info->doc_comment) : NULL;
 
 			zend_type type = property_info->type;
+			const zend_type *pre_erasure = zend_get_trait_property_pre_erasure(traits[i], prop_name);
+			if (pre_erasure) {
+				const zend_type *bind_args;
+				uint32_t bind_arity;
+				zend_type default_args[ZEND_GENERIC_MAX_PARAMS];
+				if (zend_get_trait_use_binding(ce, i, &bind_args, &bind_arity)) {
+					type = zend_substitute_leaf_type_param(*pre_erasure, bind_args, bind_arity);
+				} else if (zend_get_target_default_args(traits[i], default_args, ZEND_GENERIC_MAX_PARAMS, &bind_arity)) {
+					type = zend_substitute_leaf_type_param(*pre_erasure, default_args, bind_arity);
+				}
+
+				if (ZEND_TYPE_HAS_TYPE_PARAMETER(type)) {
+					type = property_info->type;
+				}
+			}
+
 			/* Assumption: only userland classes can use traits, as such the type must be arena allocated */
 			zend_type_copy_ctor(&type, /* use arena */ true, /* persistent */ false);
 			zend_property_info *new_prop = zend_declare_typed_property(ce, prop_name, prop_value, flags, doc_comment, type);
@@ -3244,7 +3720,7 @@ static void add_property_hook_obligation(
 
 static void resolve_delayed_variance_obligations(zend_class_entry *ce);
 
-static void check_variance_obligation(const variance_obligation *obligation) {
+static void check_variance_obligation(zend_class_entry *ce, const variance_obligation *obligation) {
 	if (obligation->type == OBLIGATION_DEPENDENCY) {
 		zend_class_entry *dependency_ce = obligation->dependency_ce;
 		if (dependency_ce->ce_flags & ZEND_ACC_UNRESOLVED_VARIANCE) {
@@ -3258,7 +3734,7 @@ static void check_variance_obligation(const variance_obligation *obligation) {
 	} else if (obligation->type == OBLIGATION_COMPATIBILITY) {
 		inheritance_status status = zend_do_perform_implementation_check(
 			&obligation->child_fn, obligation->child_scope,
-			&obligation->parent_fn, obligation->parent_scope);
+			&obligation->parent_fn, obligation->parent_scope, ce);
 		if (UNEXPECTED(status != INHERITANCE_SUCCESS)) {
 			emit_incompatible_method_error(
 				&obligation->child_fn, obligation->child_scope,
@@ -3321,7 +3797,7 @@ static void resolve_delayed_variance_obligations(zend_class_entry *ce) {
 
 	variance_obligation *obligation;
 	ZEND_HASH_FOREACH_PTR(obligations, obligation) {
-		check_variance_obligation(obligation);
+		check_variance_obligation(ce, obligation);
 	} ZEND_HASH_FOREACH_END();
 
 	zend_inheritance_check_override(ce);
@@ -3532,6 +4008,92 @@ static void zend_check_generic_link_arity(
 	}
 }
 
+static const zend_type *zend_lookup_inheritance_args(const HashTable *side_table, zend_ulong idx)
+{
+	if (!side_table) {
+		return NULL;
+	}
+
+	zval *zv = zend_hash_index_find(side_table, idx);
+	if (!zv) {
+		return NULL;
+	}
+
+	const zend_type *boxed = (const zend_type *) Z_PTR_P(zv);
+	if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) {
+		return NULL;
+	}
+
+	return boxed;
+}
+
+static void zend_check_generic_link_bounds(
+		zend_class_entry *target_ce,
+		const zend_type *args_box,
+		const char *clause,
+		zend_class_entry *ce)
+{
+	if (!args_box || !target_ce->generic_parameters) {
+		return;
+	}
+
+	const zend_type_named_with_args *args = ZEND_TYPE_NAMED_WITH_ARGS(*args_box);
+	uint32_t check_count = args->count;
+	if (check_count > target_ce->generic_parameters->count) {
+		check_count = target_ce->generic_parameters->count;
+	}
+
+	for (uint32_t i = 0; i < check_count; i++) {
+		zend_type bound = target_ce->generic_parameters->parameters[i].bound;
+		if (!ZEND_TYPE_IS_SET(bound)) {
+			continue;
+		}
+
+		zend_type arg = args->args[i];
+		zend_type effective = arg;
+		bool ce_bound_unset = false;
+
+		if (ZEND_TYPE_HAS_TYPE_PARAMETER(arg)) {
+			const zend_type_parameter_ref *ref = ZEND_TYPE_TYPE_PARAMETER(arg);
+			if (ref->origin == ZEND_GENERIC_ORIGIN_CLASS_LIKE
+					&& ce->generic_parameters
+					&& ref->index < ce->generic_parameters->count) {
+				zend_type ce_bound = ce->generic_parameters->parameters[ref->index].bound;
+				if (ZEND_TYPE_IS_SET(ce_bound)) {
+					effective = ce_bound;
+				} else {
+					ce_bound_unset = true;
+				}
+			}
+		}
+
+		if (ce_bound_unset || zend_check_generic_arg_satisfies_bound(ce, effective, target_ce, bound) != INHERITANCE_SUCCESS) {
+			zend_type bound_display = ZEND_TYPE_IS_SET(target_ce->generic_parameters->parameters[i].bound_pre_erasure)
+				? target_ce->generic_parameters->parameters[i].bound_pre_erasure
+				: bound;
+			zend_string *bound_str = zend_type_to_string(bound_display);
+			zend_string *arg_str;
+			if (ZEND_TYPE_HAS_TYPE_PARAMETER(arg)) {
+				const zend_type_parameter_ref *ref = ZEND_TYPE_TYPE_PARAMETER(arg);
+				arg_str = ref->name ? zend_string_copy(ref->name) : zend_string_init("T", 1, 0);
+			} else {
+				arg_str = zend_type_to_string(arg);
+			}
+
+			const char *param_name =
+				target_ce->generic_parameters->parameters[i].name
+					? ZSTR_VAL(target_ce->generic_parameters->parameters[i].name)
+					: "?";
+			zend_error_noreturn(E_COMPILE_ERROR,
+				"Type argument %u to %s %s in %s does not satisfy the bound %s on parameter %s, %s given",
+				i + 1, clause, ZSTR_VAL(target_ce->name), ZSTR_VAL(ce->name),
+				ZSTR_VAL(bound_str), param_name, ZSTR_VAL(arg_str));
+			zend_string_release(bound_str);
+			zend_string_release(arg_str);
+		}
+	}
+}
+
 static uint32_t zend_lookup_inheritance_arity(const HashTable *side_table, zend_ulong idx)
 {
 	if (!side_table) {
@@ -3551,12 +4113,253 @@ static uint32_t zend_lookup_inheritance_arity(const HashTable *side_table, zend_
 	return ZEND_TYPE_NAMED_WITH_ARGS(*boxed)->count;
 }
 
+static bool zend_diamond_types_equal(zend_type a, zend_type b)
+{
+	if (ZEND_TYPE_PURE_MASK(a) != ZEND_TYPE_PURE_MASK(b)) {
+		return false;
+	}
+
+	if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(a)) {
+		if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(b)) {
+			return false;
+		}
+		const zend_type_named_with_args *na = ZEND_TYPE_NAMED_WITH_ARGS(a);
+		const zend_type_named_with_args *nb = ZEND_TYPE_NAMED_WITH_ARGS(b);
+		if (na->count != nb->count) {
+			return false;
+		}
+
+		if ((na->name == NULL) != (nb->name == NULL)) {
+			return false;
+		}
+
+		if (na->name && !zend_string_equals_ci(na->name, nb->name)) {
+			return false;
+		}
+
+		for (uint32_t i = 0; i < na->count; i++) {
+			if (!zend_diamond_types_equal(na->args[i], nb->args[i])) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	if (ZEND_TYPE_HAS_LIST(a)) {
+		if (!ZEND_TYPE_HAS_LIST(b)) {
+			return false;
+		}
+
+		const zend_type_list *la = ZEND_TYPE_LIST(a);
+		const zend_type_list *lb = ZEND_TYPE_LIST(b);
+		if (la->num_types != lb->num_types) {
+			return false;
+		}
+
+		for (uint32_t i = 0; i < la->num_types; i++) {
+			if (!zend_diamond_types_equal(la->types[i], lb->types[i])) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	if (ZEND_TYPE_HAS_NAME(a)) {
+		if (!ZEND_TYPE_HAS_NAME(b)) {
+			return false;
+		}
+
+		return zend_string_equals_ci(ZEND_TYPE_NAME(a), ZEND_TYPE_NAME(b));
+	}
+
+	if (ZEND_TYPE_HAS_TYPE_PARAMETER(a)) {
+		if (!ZEND_TYPE_HAS_TYPE_PARAMETER(b)) {
+			return false;
+		}
+
+		const zend_type_parameter_ref *ra = ZEND_TYPE_TYPE_PARAMETER(a);
+		const zend_type_parameter_ref *rb = ZEND_TYPE_TYPE_PARAMETER(b);
+		return ra->origin == rb->origin && ra->index == rb->index;
+	}
+
+	return true;
+}
+
+typedef struct {
+	zend_type args[ZEND_GENERIC_MAX_PARAMS];
+	uint32_t arity;
+	zend_string *first_source_name;
+} zend_diamond_record;
+
+static zend_string *zend_diamond_format_args(const zend_type *args, uint32_t arity)
+{
+	smart_str buf = {0};
+	smart_str_appendc(&buf, '<');
+	for (uint32_t j = 0; j < arity; j++) {
+		if (j > 0) smart_str_appends(&buf, ", ");
+		if (ZEND_TYPE_HAS_TYPE_PARAMETER(args[j])) {
+			const zend_type_parameter_ref *ref = ZEND_TYPE_TYPE_PARAMETER(args[j]);
+			smart_str_append(&buf, ref->name ? ref->name : ZSTR_KNOWN(ZEND_STR_MIXED));
+		} else {
+			zend_string *piece = zend_type_to_string(args[j]);
+			if (piece) {
+				smart_str_append(&buf, piece);
+				zend_string_release(piece);
+			} else {
+				smart_str_appendc(&buf, '?');
+			}
+		}
+	}
+
+	smart_str_appendc(&buf, '>');
+	smart_str_0(&buf);
+	return buf.s;
+}
+
+static void zend_diamond_record_dtor(zval *zv)
+{
+	efree(Z_PTR_P(zv));
+}
+
+static void zend_diamond_record_or_check(
+		zend_class_entry *ce,
+		zend_class_entry *target,
+		const zend_type *args, uint32_t arity,
+		zend_string *source_name,
+		HashTable *records)
+{
+	zend_ulong key = (zend_ulong)(uintptr_t) target;
+	zend_diamond_record *prior = zend_hash_index_find_ptr(records, key);
+	if (prior) {
+		bool conflict = prior->arity != arity;
+		if (!conflict) {
+			for (uint32_t j = 0; j < arity; j++) {
+				if (!zend_diamond_types_equal(prior->args[j], args[j])) {
+					conflict = true;
+					break;
+				}
+			}
+		}
+
+		if (!conflict) {
+			return;
+		}
+
+		zend_string *first_args = zend_diamond_format_args(prior->args, prior->arity);
+		zend_string *next_args = zend_diamond_format_args(args, arity);
+		zend_error_noreturn(E_COMPILE_ERROR,
+			"%s inherits %s%s via %s and %s%s via %s",
+			ZSTR_VAL(ce->name),
+			ZSTR_VAL(target->name), ZSTR_VAL(first_args), ZSTR_VAL(prior->first_source_name),
+			ZSTR_VAL(target->name), ZSTR_VAL(next_args), ZSTR_VAL(source_name));
+	}
+
+	zend_diamond_record *record = emalloc(sizeof(zend_diamond_record));
+	record->arity = arity;
+	record->first_source_name = source_name;
+	for (uint32_t j = 0; j < arity; j++) {
+		record->args[j] = args[j];
+	}
+
+	zend_hash_index_add_new_ptr(records, key, record);
+}
+
+static const zend_type_named_with_args *zend_get_extends_binding(const zend_class_entry *ce)
+{
+	if (!ce->generic_types || !ce->generic_types->extends) return NULL;
+	if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*ce->generic_types->extends)) return NULL;
+	return ZEND_TYPE_NAMED_WITH_ARGS(*ce->generic_types->extends);
+}
+
+static const zend_type_named_with_args *zend_get_implements_binding(const zend_class_entry *ce, uint32_t idx)
+{
+	if (!ce->generic_types || !ce->generic_types->implements) return NULL;
+	zval *zv = zend_hash_index_find(ce->generic_types->implements, idx);
+	if (!zv) return NULL;
+	zend_type *boxed = (zend_type *) Z_PTR_P(zv);
+	if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) return NULL;
+	return ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
+}
+
+static void zend_diamond_collect_via_provider(
+		zend_class_entry *ce,
+		zend_class_entry *provider,
+		const zend_type *ce_to_provider,
+		uint32_t ce_to_provider_arity,
+		zend_string *source_name,
+		HashTable *records)
+{
+	if (!provider) return;
+
+	if (provider->generic_parameters && ce_to_provider) {
+		zend_diamond_record_or_check(ce, provider, ce_to_provider, ce_to_provider_arity,
+			source_name, records);
+	}
+
+	for (uint32_t i = 0; i < provider->num_interfaces; i++) {
+		zend_class_entry *target = provider->interfaces[i];
+		if (!target || !target->generic_parameters) continue;
+
+		zend_type via[ZEND_GENERIC_MAX_PARAMS];
+		uint32_t via_arity;
+		if (!zend_get_inheritance_binding_full(provider, target, via, ZEND_GENERIC_MAX_PARAMS, &via_arity)) continue;
+
+		if (ce_to_provider) {
+			for (uint32_t j = 0; j < via_arity; j++) {
+				via[j] = zend_substitute_leaf_type_param(via[j], ce_to_provider, ce_to_provider_arity);
+			}
+		}
+
+		zend_diamond_record_or_check(ce, target, via, via_arity,
+			source_name, records);
+	}
+}
+
+static void zend_validate_generic_diamond_bindings(
+		zend_class_entry *ce,
+		zend_class_entry *parent_ce,
+		zend_class_entry **traits_and_interfaces)
+{
+	if (!parent_ce && (!traits_and_interfaces || ce->num_interfaces == 0)) return;
+
+	HashTable records;
+	zend_hash_init(&records, 8, NULL, zend_diamond_record_dtor, /* persistent */ 0);
+
+	if (parent_ce) {
+		const zend_type_named_with_args *binding = zend_get_extends_binding(ce);
+		zend_diamond_collect_via_provider(ce, parent_ce,
+			binding ? binding->args : NULL,
+			binding ? binding->count : 0,
+			parent_ce->name, &records);
+	}
+
+	if (traits_and_interfaces) {
+		for (uint32_t i = 0; i < ce->num_interfaces; i++) {
+			zend_class_entry *DI = traits_and_interfaces[ce->num_traits + i];
+			if (!DI) continue;
+			const zend_type_named_with_args *binding = zend_get_implements_binding(ce, i);
+			zend_diamond_collect_via_provider(ce, DI,
+				binding ? binding->args : NULL,
+				binding ? binding->count : 0,
+				DI->name, &records);
+		}
+	}
+
+	zend_hash_destroy(&records);
+}
+
 static void zend_validate_generic_inheritance_arities(
 		zend_class_entry *ce,
 		zend_class_entry *parent_ce,
 		zend_class_entry **traits_and_interfaces)
 {
-	(void) parent_ce;
+	if (!traits_and_interfaces && !parent_ce) {
+		return;
+	}
+
+	zend_validate_generic_diamond_bindings(ce, parent_ce, traits_and_interfaces);
 	if (!traits_and_interfaces) {
 		return;
 	}
@@ -3569,6 +4372,8 @@ static void zend_validate_generic_inheritance_arities(
 		if (arity > 0 || trait_ce->generic_parameters) {
 			zend_check_generic_link_arity(trait_ce, arity, "use", ce->name);
 		}
+
+		zend_check_generic_link_bounds(trait_ce, zend_lookup_inheritance_args(trait_uses_table, i), "use", ce);
 	}
 
 	const HashTable *implements_table = ce->generic_types ? ce->generic_types->implements : NULL;
@@ -3580,6 +4385,8 @@ static void zend_validate_generic_inheritance_arities(
 		if (arity > 0 || iface_ce->generic_parameters) {
 			zend_check_generic_link_arity(iface_ce, arity, clause, ce->name);
 		}
+
+		zend_check_generic_link_bounds(iface_ce, zend_lookup_inheritance_args(implements_table, i), clause, ce);
 	}
 }
 
@@ -4130,3 +4937,14 @@ ZEND_API zend_class_entry *zend_try_early_bind(zend_class_entry *ce, zend_class_
 	return NULL;
 }
 /* }}} */
+
+ZEND_API zend_inheritance_status zend_check_generic_arg_satisfies_bound(
+		zend_class_entry *arg_scope, zend_type arg,
+		zend_class_entry *bound_scope, zend_type bound)
+{
+	if (!ZEND_TYPE_IS_SET(bound)) {
+		return INHERITANCE_SUCCESS;
+	}
+
+	return zend_perform_covariant_type_check(arg_scope, arg, bound_scope, bound);
+}
