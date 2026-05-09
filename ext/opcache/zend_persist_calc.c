@@ -565,6 +565,20 @@ static void zend_persist_property_info_calc(zend_property_info *prop)
 	}
 }
 
+static void zend_persist_substituted_property_info_calc(zend_property_info *prop)
+{
+	ADD_SIZE(sizeof(zend_property_info));
+	zend_persist_type_calc(&prop->type);
+	if (prop->hooks) {
+		ADD_SIZE(ZEND_PROPERTY_HOOK_STRUCT_SIZE);
+		for (uint32_t i = 0; i < ZEND_PROPERTY_HOOK_COUNT; i++) {
+			if (prop->hooks[i]) {
+				zend_persist_class_method_calc(&prop->hooks[i]->op_array);
+			}
+		}
+	}
+}
+
 static void zend_persist_class_constant_calc(const zval *zv)
 {
 	zend_class_constant *c = Z_PTR_P(zv);
@@ -648,6 +662,9 @@ void zend_persist_class_entry_calc(zend_class_entry *ce)
 			ADD_INTERNED_STRING(p->key);
 			if (prop->ce == ce) {
 				zend_persist_property_info_calc(prop);
+			} else if (!zend_accel_in_shm(prop) && !zend_shared_alloc_get_xlat_entry(prop)) {
+				zend_shared_alloc_register_xlat_entry(prop, prop);
+				zend_persist_substituted_property_info_calc(prop);
 			}
 		} ZEND_HASH_FOREACH_END();
 

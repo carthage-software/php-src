@@ -1028,6 +1028,41 @@ static zend_property_info *zend_persist_property_info(zend_property_info *prop)
 	return prop;
 }
 
+static zend_property_info *zend_persist_substituted_property_info(zend_property_info *prop)
+{
+	zend_class_entry *ce;
+	prop = zend_shared_memdup_put(prop, sizeof(zend_property_info));
+	ce = zend_shared_alloc_get_xlat_entry(prop->ce);
+	if (ce) {
+		prop->ce = ce;
+	}
+
+	if (prop->prototype) {
+		const zend_property_info *xlat_proto = zend_shared_alloc_get_xlat_entry(prop->prototype);
+		if (xlat_proto) {
+			prop->prototype = xlat_proto;
+		}
+	}
+
+	zend_persist_type(&prop->type);
+	if (prop->hooks) {
+		prop->hooks = zend_shared_memdup_put(prop->hooks, ZEND_PROPERTY_HOOK_STRUCT_SIZE);
+		for (uint32_t i = 0; i < ZEND_PROPERTY_HOOK_COUNT; i++) {
+			if (prop->hooks[i]) {
+				zend_op_array *hook = zend_persist_class_method(&prop->hooks[i]->op_array, prop->ce);
+				const zend_property_info *new_prop_info = zend_shared_alloc_get_xlat_entry(hook->prop_info);
+				if (new_prop_info) {
+					hook->prop_info = new_prop_info;
+				}
+
+				prop->hooks[i] = (zend_function *) hook;
+			}
+		}
+	}
+
+	return prop;
+}
+
 static void zend_persist_class_constant(zval *zv)
 {
 	const zend_class_constant *orig_c = Z_PTR_P(zv);
@@ -1163,9 +1198,11 @@ zend_class_entry *zend_persist_class_entry(zend_class_entry *orig_ce)
 			if (prop->ce == orig_ce) {
 				Z_PTR(p->val) = zend_persist_property_info(prop);
 			} else {
-				prop = zend_shared_alloc_get_xlat_entry(prop);
-				if (prop) {
-					Z_PTR(p->val) = prop;
+				zend_property_info *xlat_prop = zend_shared_alloc_get_xlat_entry(prop);
+				if (xlat_prop) {
+					Z_PTR(p->val) = xlat_prop;
+				} else if (!zend_accel_in_shm(prop)) {
+					Z_PTR(p->val) = zend_persist_substituted_property_info(prop);
 				} else {
 					/* This can happen if preloading is used and we inherit a property from an
 					 * internal class. In that case we should keep pointing to the internal
