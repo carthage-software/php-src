@@ -1958,6 +1958,7 @@ static void do_inherit_property(zend_property_info *parent_info, zend_string *ke
 								zend_function *clone_fn = zend_arena_alloc(&CG(arena), sizeof(zend_op_array));
 								memcpy(clone_fn, orig, sizeof(zend_op_array));
 								clone_fn->op_array.arg_info = new_arg_info + 1;
+								function_add_ref(clone_fn);
 
 								clone_hooks[hi] = clone_fn;
 							}
