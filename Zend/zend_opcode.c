@@ -188,6 +188,22 @@ ZEND_API void zend_generic_type_table_destroy(zend_generic_type_table *table) {
 	if (!table) {
 		return;
 	}
+
+	bool persisted = false;
+#define MAYBE_PERSISTED(ht) ((ht) && (GC_FLAGS(ht) & IS_ARRAY_IMMUTABLE))
+	if (MAYBE_PERSISTED(table->parameters)
+	  || MAYBE_PERSISTED(table->properties)
+	  || MAYBE_PERSISTED(table->class_constants)
+	  || MAYBE_PERSISTED(table->implements)
+	  || MAYBE_PERSISTED(table->trait_uses)
+	  || MAYBE_PERSISTED(table->turbofish_args)) {
+		persisted = true;
+	}
+#undef MAYBE_PERSISTED
+	if (persisted) {
+		return;
+	}
+
 	if (table->return_type) {
 		zend_type_release(*table->return_type, /* persistent */ false);
 		efree(table->return_type);
