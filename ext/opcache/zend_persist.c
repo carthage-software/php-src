@@ -645,6 +645,16 @@ static void zend_persist_op_array_ex(zend_op_array *op_array, zend_persistent_sc
 				op_array->dynamic_func_defs = zend_shared_alloc_get_xlat_entry(op_array->dynamic_func_defs);
 				ZEND_ASSERT(op_array->dynamic_func_defs != NULL);
 			}
+			if (op_array->generic_parameters) {
+				zend_generic_parameter_list *xlat_params = zend_shared_alloc_get_xlat_entry(op_array->generic_parameters);
+				ZEND_ASSERT(xlat_params != NULL);
+				op_array->generic_parameters = xlat_params;
+			}
+			if (op_array->generic_types) {
+				zend_generic_type_table *xlat_types = zend_shared_alloc_get_xlat_entry(op_array->generic_types);
+				ZEND_ASSERT(xlat_types != NULL);
+				op_array->generic_types = xlat_types;
+			}
 			ZCG(mem) = (void*)((char*)ZCG(mem) + ZEND_ALIGNED_SIZE(zend_extensions_op_array_persist(op_array, ZCG(mem))));
 			return;
 		}
