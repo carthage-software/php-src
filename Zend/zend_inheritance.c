@@ -1920,6 +1920,7 @@ static void do_inherit_property(zend_property_info *parent_info, zend_string *ke
 					if (!ZEND_TYPE_HAS_TYPE_PARAMETER(sub)) {
 						zend_property_info *clone = zend_arena_alloc(&CG(arena), sizeof(*clone));
 						*clone = *parent_info;
+						clone->flags |= ZEND_ACC_GENERIC_CLONE;
 						clone->type = sub;
 						zend_type_copy_ctor(&clone->type, /* use_arena */ true, /* persistent */ false);
 

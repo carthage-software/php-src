@@ -662,7 +662,7 @@ void zend_persist_class_entry_calc(zend_class_entry *ce)
 			ADD_INTERNED_STRING(p->key);
 			if (prop->ce == ce) {
 				zend_persist_property_info_calc(prop);
-			} else if (!zend_accel_in_shm(prop) && prop->ce->type == ZEND_USER_CLASS && !zend_shared_alloc_get_xlat_entry(prop)) {
+			} else if ((prop->flags & ZEND_ACC_GENERIC_CLONE) && !zend_shared_alloc_get_xlat_entry(prop)) {
 				zend_shared_alloc_register_xlat_entry(prop, prop);
 				zend_persist_substituted_property_info_calc(prop);
 			}
