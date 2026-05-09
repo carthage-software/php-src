@@ -586,8 +586,31 @@ static void zend_persist_op_array_ex(zend_op_array *op_array, zend_persistent_sc
 				if (op_array->fn_flags & ZEND_ACC_HAS_RETURN_TYPE) {
 					arg_info--;
 				}
-				arg_info = zend_shared_alloc_get_xlat_entry(arg_info);
-				ZEND_ASSERT(arg_info != NULL);
+				zend_arg_info *xlat_arg_info = zend_shared_alloc_get_xlat_entry(arg_info);
+				if (xlat_arg_info) {
+					arg_info = xlat_arg_info;
+				} else {
+					uint32_t num_args = op_array->num_args;
+					if (op_array->fn_flags & ZEND_ACC_HAS_RETURN_TYPE) {
+						num_args++;
+					}
+
+					if (op_array->fn_flags & ZEND_ACC_VARIADIC) {
+						num_args++;
+					}
+
+					arg_info = zend_shared_memdup_put(arg_info, sizeof(zend_arg_info) * num_args);
+					for (uint32_t i = 0; i < num_args; i++) {
+						if (arg_info[i].name) {
+							zend_accel_store_interned_string(arg_info[i].name);
+						}
+
+						zend_persist_type(&arg_info[i].type);
+						if (arg_info[i].doc_comment) {
+							zend_accel_store_interned_string(arg_info[i].doc_comment);
+						}
+					}
+				}
 				if (op_array->fn_flags & ZEND_ACC_HAS_RETURN_TYPE) {
 					arg_info++;
 				}
