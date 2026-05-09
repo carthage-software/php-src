@@ -1211,7 +1211,7 @@ zend_class_entry *zend_persist_class_entry(zend_class_entry *orig_ce)
 				zend_property_info *xlat_prop = zend_shared_alloc_get_xlat_entry(prop);
 				if (xlat_prop) {
 					Z_PTR(p->val) = xlat_prop;
-				} else if (prop->ce->type == ZEND_USER_CLASS && zend_hash_find_ptr(&prop->ce->properties_info, p->key) != prop) {
+				} else if (!zend_accel_in_shm(prop) && prop->ce->type == ZEND_USER_CLASS) {
 					Z_PTR(p->val) = zend_persist_substituted_property_info(prop);
 				} else {
 					/* This can happen if preloading is used and we inherit a property from an
