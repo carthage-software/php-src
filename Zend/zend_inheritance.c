@@ -1934,10 +1934,22 @@ static void do_inherit_property(zend_property_info *parent_info, zend_string *ke
 
 								uint32_t num_args = orig->op_array.num_args;
 								if (orig->op_array.fn_flags & ZEND_ACC_VARIADIC) num_args++;
-								size_t arg_info_block = sizeof(zend_arg_info) * (num_args + 1);
+								uint32_t total = num_args + 1;
+								size_t arg_info_block = sizeof(zend_arg_info) * total;
 
 								zend_arg_info *new_arg_info = zend_arena_alloc(&CG(arena), arg_info_block);
 								memcpy(new_arg_info, orig->op_array.arg_info - 1, arg_info_block);
+
+								for (uint32_t i = 0; i < total; i++) {
+									if (new_arg_info[i].name) {
+										zend_string_addref(new_arg_info[i].name);
+									}
+
+									if (new_arg_info[i].doc_comment) {
+										zend_string_addref(new_arg_info[i].doc_comment);
+									}
+								}
+
 								uint32_t slot = (hi == ZEND_PROPERTY_HOOK_GET) ? 0 : 1;
 								new_arg_info[slot].type = sub;
 								zend_type_copy_ctor(&new_arg_info[slot].type, true, false);
@@ -2796,6 +2808,17 @@ static void zend_substitute_trait_method_arg_info(
 	const zend_arg_info *orig_block = has_return ? orig_op->arg_info - 1 : orig_op->arg_info;
 	zend_arg_info *new_block = zend_arena_alloc(&CG(arena), sizeof(zend_arg_info) * total);
 	memcpy(new_block, orig_block, sizeof(zend_arg_info) * total);
+
+	/* The clone shares name/doc_comment string pointers with the parent's arg_info; bump refcount
+	 * so opcache's interning pass on the parent doesn't release strings the clone still references. */
+	for (uint32_t i = 0; i < total; i++) {
+		if (new_block[i].name) {
+			zend_string_addref(new_block[i].name);
+		}
+		if (new_block[i].doc_comment) {
+			zend_string_addref(new_block[i].doc_comment);
+		}
+	}
 
 	uint32_t return_slot_offset = has_return ? 1 : 0;
 
