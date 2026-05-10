@@ -4267,9 +4267,28 @@ static void zend_variance_walk(
 
 	if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(t)) {
 		const zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(t);
-		zend_class_entry *target = named->name
-			? zend_lookup_class_ex(named->name, NULL, ZEND_FETCH_CLASS_NO_AUTOLOAD)
-			: NULL;
+		zend_class_entry *target = NULL;
+		if (named->name) {
+			zend_class_entry *active = CG(active_class_entry);
+			if (active) {
+				if (zend_string_equals_literal_ci(named->name, "self")
+						|| zend_string_equals_literal_ci(named->name, "static")
+						|| (active->name && zend_string_equals_ci(named->name, active->name))) {
+					target = active;
+				} else if (zend_string_equals_literal_ci(named->name, "parent")) {
+					if (active->ce_flags & ZEND_ACC_RESOLVED_PARENT) {
+						target = active->parent;
+					} else if (active->parent_name) {
+						target = zend_lookup_class_ex(active->parent_name, NULL, ZEND_FETCH_CLASS_NO_AUTOLOAD);
+					}
+				}
+			}
+
+			if (!target) {
+				target = zend_lookup_class_ex(named->name, NULL, ZEND_FETCH_CLASS_NO_AUTOLOAD);
+			}
+		}
+
 		for (uint32_t i = 0; i < named->count; i++) {
 			zend_variance_polarity slot;
 			if (target && target->generic_parameters && i < target->generic_parameters->count) {
