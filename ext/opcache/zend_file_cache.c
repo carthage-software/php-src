@@ -253,6 +253,12 @@ static void zend_file_cache_serialize_attribute(zval                     *zv,
 
 static void zend_file_cache_unserialize_attribute(zval *zv, zend_persistent_script *script, void *buf);
 
+static void zend_file_cache_serialize_type(
+		zend_type *type, zend_persistent_script *script, zend_file_cache_metainfo *info, void *buf);
+
+static void zend_file_cache_unserialize_type(
+		zend_type *type, zend_class_entry *scope, zend_persistent_script *script, void *buf);
+
 static void *zend_file_cache_serialize_interned(zend_string              *str,
                                                 zend_file_cache_metainfo *info)
 {
@@ -468,6 +474,13 @@ static void zend_file_cache_serialize_attribute(zval                     *zv,
 		SERIALIZE_STR(attr->args[i].name);
 		zend_file_cache_serialize_zval(&attr->args[i].value, script, info, buf);
 	}
+
+	if (attr->generic_args) {
+		SERIALIZE_PTR(attr->generic_args);
+		zend_type *t = attr->generic_args;
+		UNSERIALIZE_PTR(t);
+		zend_file_cache_serialize_type(t, script, info, buf);
+	}
 }
 
 static void zend_file_cache_serialize_type(
@@ -515,8 +528,8 @@ static void zend_file_cache_serialize_type(
 static void zend_file_cache_serialize_generic_type_entry(
 		zval *zv, zend_persistent_script *script, zend_file_cache_metainfo *info, void *buf)
 {
-	zend_type *boxed = Z_PTR_P(zv);
 	SERIALIZE_PTR(Z_PTR_P(zv));
+	zend_type *boxed = Z_PTR_P(zv);
 	UNSERIALIZE_PTR(boxed);
 	zend_file_cache_serialize_type(boxed, script, info, buf);
 }
@@ -582,6 +595,9 @@ static void zend_file_cache_serialize_generic_type_table(
 	}
 	if (table->trait_uses) {
 		zend_file_cache_serialize_generic_type_table_ht(&table->trait_uses, script, info, buf);
+	}
+	if (table->turbofish_args) {
+		zend_file_cache_serialize_generic_type_table_ht(&table->turbofish_args, script, info, buf);
 	}
 }
 
@@ -1495,6 +1511,11 @@ static void zend_file_cache_unserialize_attribute(zval *zv, zend_persistent_scri
 		UNSERIALIZE_STR(attr->args[i].name);
 		zend_file_cache_unserialize_zval(&attr->args[i].value, script, buf);
 	}
+
+	if (attr->generic_args) {
+		UNSERIALIZE_PTR(attr->generic_args);
+		zend_file_cache_unserialize_type(attr->generic_args, NULL, script, buf);
+	}
 }
 
 static void zend_file_cache_unserialize_type(
@@ -1611,6 +1632,10 @@ static void zend_file_cache_unserialize_generic_type_table(
 
 	if (table->trait_uses) {
 		zend_file_cache_unserialize_generic_type_table_ht(&table->trait_uses, scope, script, buf);
+	}
+
+	if (table->turbofish_args) {
+		zend_file_cache_unserialize_generic_type_table_ht(&table->turbofish_args, scope, script, buf);
 	}
 }
 
