@@ -980,9 +980,7 @@ type_expr_without_static:
 ;
 
 type_without_static:
-		T_ARRAY optional_generic_type_argument_list
-			{ zend_ast *bare = zend_ast_create_ex(ZEND_AST_TYPE, IS_ARRAY);
-			  $$ = $2 ? zend_ast_create(ZEND_AST_GENERIC_NAMED_TYPE, bare, $2) : bare; }
+		T_ARRAY		{ $$ = zend_ast_create_ex(ZEND_AST_TYPE, IS_ARRAY); }
 	|	T_CALLABLE	{ $$ = zend_ast_create_ex(ZEND_AST_TYPE, IS_CALLABLE); }
 	|	name optional_generic_type_argument_list
 			{ $$ = $2 ? zend_ast_create(ZEND_AST_GENERIC_NAMED_TYPE, $1, $2) : $1; }

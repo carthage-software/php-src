@@ -893,12 +893,38 @@ static bool zend_type_ast_has_generic_content(zend_ast *ast)
 	return result;
 }
 
+static void zend_reject_typearg_on_iterable(zend_ast *ast)
+{
+	if (ast->kind != ZEND_AST_GENERIC_NAMED_TYPE) {
+		return;
+	}
+
+	zend_ast *name_ast = ast->child[0];
+	if (name_ast->kind != ZEND_AST_ZVAL) {
+		return;
+	}
+
+	zval *zv = zend_ast_get_zval(name_ast);
+	if (Z_TYPE_P(zv) != IS_STRING) {
+		return;
+	}
+
+	if ((name_ast->attr & ZEND_NAME_NOT_FQ) != ZEND_NAME_NOT_FQ) {
+		return;
+	}
+
+	if (zend_string_equals_literal_ci(Z_STR_P(zv), "iterable")) {
+		zend_error_noreturn(E_COMPILE_ERROR, "Type arguments are not allowed on iterable");
+	}
+}
+
 /* Build a pre-erasure zend_type from a type-expression AST. The returned type
  * may carry type-parameter references (TYPE_PARAMETER bit) or named-with-args
  * payloads (NAMED_WITH_ARGS bit). Used only for the side table; the runtime
  * never sees this form. */
 static zend_type zend_compile_pre_erasure_typename(zend_ast *ast)
 {
+	zend_reject_typearg_on_iterable(ast);
 	bool is_marked_nullable = ast->attr & ZEND_TYPE_NULLABLE;
 	zend_ast_attr orig_attr = ast->attr;
 	if (is_marked_nullable) {
@@ -922,19 +948,8 @@ static zend_type zend_compile_pre_erasure_typename(zend_ast *ast)
 		zend_ast_list *args_list = zend_ast_get_list(ast->child[1]);
 		zend_type_named_with_args *payload = emalloc(ZEND_TYPE_NAMED_WITH_ARGS_SIZE(args_list->children));
 		if (name_ast->kind == ZEND_AST_TYPE) {
-			const char *cname;
-			switch (name_ast->attr) {
-				case IS_ARRAY:
-					cname = "array";
-					break;
-				case IS_STATIC:
-					cname = "static";
-					break;
-				default:
-					ZEND_UNREACHABLE();
-			}
-
-			payload->name = zend_string_init_interned(cname, strlen(cname), 0);
+			ZEND_ASSERT(name_ast->attr == IS_STATIC);
+			payload->name = zend_string_init_interned(ZEND_STRL("static"), 0);
 			payload->name_attr = 0;
 		} else {
 			payload->name = zend_string_copy(zval_make_interned_string(zend_ast_get_zval(name_ast)));
@@ -8071,6 +8086,7 @@ static zend_type_list *zend_arena_deep_copy_type_list(zend_type_list *src)
 static zend_type zend_compile_single_typename(zend_ast *ast)
 {
 	ZEND_ASSERT(!(ast->attr & ZEND_TYPE_NULLABLE));
+	zend_reject_typearg_on_iterable(ast);
 	if (ast->kind == ZEND_AST_GENERIC_NAMED_TYPE) {
 		ast = ast->child[0];
 	}
