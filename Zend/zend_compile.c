@@ -8090,7 +8090,7 @@ static zend_type zend_compile_single_typename(zend_ast *ast)
 				} else if (ZEND_TYPE_HAS_LIST(result)) {
 					zend_type_list *orig_list = ZEND_TYPE_LIST(result);
 					size_t list_size = ZEND_TYPE_LIST_SIZE(orig_list->num_types);
-					zend_type_list *copy = emalloc(list_size);
+					zend_type_list *copy = zend_arena_alloc(&CG(arena), list_size);
 					memcpy(copy, orig_list, list_size);
 					for (uint32_t i = 0; i < copy->num_types; i++) {
 						if (ZEND_TYPE_HAS_NAME(copy->types[i])) {
