@@ -436,6 +436,7 @@ void zend_init_compiler_data_structures(void) /* {{{ */
 	CG(type_arg_depth) = 0;
 	CG(type_arg_residual_token) = 0;
 	CG(generic_scope) = NULL;
+	CG(in_static_member_type) = false;
 	CG(inheritance_binding_cache) = NULL;
 }
 /* }}} */
@@ -500,6 +501,16 @@ static zend_generic_parameter *zend_generic_lookup_full(
 	}
 
 	return result;
+}
+/* }}} */
+
+static void zend_check_class_origin_in_static_context(const zend_string *param_name) /* {{{ */
+{
+	if (CG(in_static_member_type) && CG(active_class_entry)) {
+		zend_error_noreturn(E_COMPILE_ERROR,
+			"Type parameter %s is bound to %s and cannot be used in static context",
+			ZSTR_VAL(param_name), ZSTR_VAL(CG(active_class_entry)->name));
+	}
 }
 /* }}} */
 
@@ -950,6 +961,10 @@ static zend_type zend_compile_pre_erasure_typename(zend_ast *ast)
 			}
 		}
 		if (param) {
+			if (origin == ZEND_GENERIC_ORIGIN_CLASS_LIKE) {
+				zend_check_class_origin_in_static_context(param->name);
+			}
+
 			zend_type_parameter_ref *ref = emalloc(sizeof(*ref));
 			ref->name = zend_string_copy(param->name);
 			ref->index = index;
@@ -5809,7 +5824,7 @@ static zend_result zend_compile_func_array_map(znode *result, zend_ast_list *arg
 	 * breaking for the generated call.
 	 */
 	if (callback->kind == ZEND_AST_CALL
-	 && callback->child[0]->kind == ZEND_AST_ZVAL 
+	 && callback->child[0]->kind == ZEND_AST_ZVAL
 	 && Z_TYPE_P(zend_ast_get_zval(callback->child[0])) == IS_STRING
 	 && zend_string_equals_literal_ci(zend_ast_get_str(callback->child[0]), "assert")) {
 		return FAILURE;
@@ -8044,8 +8059,21 @@ static zend_type zend_compile_single_typename(zend_ast *ast)
 	}
 	/* Generic type parameter reference: erase to the parameter's bound (or `mixed` when unbounded). */
 	{
-		zend_generic_parameter *param = zend_generic_lookup_name(ast);
+		zend_generic_origin origin = ZEND_GENERIC_ORIGIN_CLASS_LIKE;
+		zend_generic_parameter *param = NULL;
+		if (CG(generic_scope) && ast->kind == ZEND_AST_ZVAL
+				&& (ast->attr & ZEND_NAME_NOT_FQ) == ZEND_NAME_NOT_FQ) {
+			const zval *zv = zend_ast_get_zval(ast);
+			if (Z_TYPE_P(zv) == IS_STRING) {
+				param = zend_generic_lookup_full(Z_STR_P(zv), &origin, NULL);
+			}
+		}
+
 		if (param) {
+			if (origin == ZEND_GENERIC_ORIGIN_CLASS_LIKE) {
+				zend_check_class_origin_in_static_context(param->name);
+			}
+
 			for (zend_generic_scope_entry *e = CG(generic_scope); e; e = e->outer) {
 				if (e->self_compiling == param) {
 					zend_string *self = zend_string_copy(param->name);
@@ -9635,6 +9663,9 @@ static zend_op_array *zend_compile_func_decl_ex(
 		zend_stack_push(&CG(loop_var_stack), (void *) &dummy_var);
 	}
 
+	bool save_in_static_member_type = CG(in_static_member_type);
+	CG(in_static_member_type) = is_method && (op_array->fn_flags & ZEND_ACC_STATIC);
+
 	/* Harvest function/method generic type parameters and push them into scope
 	 * so that parameter, return, and body type annotations erase correctly.
 	 * See GENERICS.md §6.9. */
@@ -9645,6 +9676,8 @@ static zend_op_array *zend_compile_func_decl_ex(
 
 	zend_compile_params(params_ast, return_type_ast,
 		is_method && zend_string_equals_literal(lcname, ZEND_TOSTRING_FUNC_LCNAME) ? IS_STRING : 0);
+
+	CG(in_static_member_type) = save_in_static_member_type;
 	if (CG(active_op_array)->fn_flags & ZEND_ACC_GENERATOR) {
 		zend_mark_function_as_generator();
 		zend_emit_op(NULL, ZEND_GENERATOR_CREATE, NULL, NULL);
@@ -9991,6 +10024,11 @@ static void zend_compile_prop_decl(zend_ast *ast, zend_ast *type_ast, uint32_t f
 		}
 
 		if (type_ast) {
+			bool save_in_static_member_type = CG(in_static_member_type);
+			if (flags & ZEND_ACC_STATIC) {
+				CG(in_static_member_type) = true;
+			}
+
 			type = zend_compile_typename(type_ast);
 			if (zend_type_ast_has_generic_content(type_ast)) {
 				zend_type pre = zend_compile_pre_erasure_typename(type_ast);
@@ -9998,6 +10036,7 @@ static void zend_compile_prop_decl(zend_ast *ast, zend_ast *type_ast, uint32_t f
 					zend_generic_get_or_create_class_table(ce), name, pre);
 			}
 
+			CG(in_static_member_type) = save_in_static_member_type;
 			if (ZEND_TYPE_FULL_MASK(type) & (MAY_BE_VOID|MAY_BE_NEVER|MAY_BE_CALLABLE)) {
 				zend_string *str = zend_type_to_string(type);
 				zend_error_noreturn(E_COMPILE_ERROR,
