@@ -1047,6 +1047,27 @@ static zend_property_info *zend_persist_substituted_property_info(zend_property_
 		prop->ce = ce;
 	}
 
+	if (prop->name) {
+		zend_string *xlat_name = zend_shared_alloc_get_xlat_entry(prop->name);
+		if (xlat_name) {
+			prop->name = xlat_name;
+		}
+	}
+
+	if (prop->doc_comment) {
+		zend_string *xlat_doc = zend_shared_alloc_get_xlat_entry(prop->doc_comment);
+		if (xlat_doc) {
+			prop->doc_comment = xlat_doc;
+		}
+	}
+
+	if (prop->attributes) {
+		HashTable *xlat_attrs = zend_shared_alloc_get_xlat_entry(prop->attributes);
+		if (xlat_attrs) {
+			prop->attributes = xlat_attrs;
+		}
+	}
+
 	if (prop->prototype) {
 		const zend_property_info *xlat_proto = zend_shared_alloc_get_xlat_entry(prop->prototype);
 		if (xlat_proto) {
