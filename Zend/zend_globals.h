@@ -170,6 +170,12 @@ struct _zend_compiler_globals {
 
 	struct _zend_generic_scope_entry *generic_scope;
 
+	/* Set while compiling a type expression that has no instance binding for
+	 * the enclosing class's type parameters (i.e. a static method's
+	 * parameter/return types or a static property's type). Class-origin type
+	 * parameter references resolved in this context are a compile error. */
+	bool in_static_member_type;
+
 	struct _zend_inheritance_binding_cache *inheritance_binding_cache;
 #ifdef ZTS
 	uint32_t copied_functions_count;
