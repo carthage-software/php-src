@@ -40,9 +40,6 @@ static void zend_check_generic_link_arity(
 static void zend_check_generic_link_bounds(
 		zend_class_entry *target_ce, const zend_type *args_box,
 		const char *clause, zend_class_entry *ce);
-static void zend_validate_generic_inheritance_arities(
-		zend_class_entry *ce, zend_class_entry *parent_ce,
-		zend_class_entry **traits_and_interfaces);
 static void zend_substitute_trait_method_arg_info(
 		zend_function *new_fn, const zend_function *orig_fn,
 		const zend_type *bind_args, uint32_t bind_arity);
