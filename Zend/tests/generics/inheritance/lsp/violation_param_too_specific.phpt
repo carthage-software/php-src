@@ -14,4 +14,4 @@ class TooSpecificEater implements Eater<Animal> {
 }
 ?>
 --EXPECTF--
-Fatal error: Declaration of TooSpecificEater::eat(Dog $x): void must be compatible with Eater::eat(mixed $x): void in %s on line %d
+Fatal error: Declaration of TooSpecificEater::eat(Dog $x): void must be compatible with Eater::eat(Animal $x): void in %s on line %d
