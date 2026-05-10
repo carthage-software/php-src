@@ -1751,12 +1751,12 @@ ZEND_API void zend_optimize_script(zend_script *script, zend_long optimization_l
 
 		zend_property_info *prop;
 		ZEND_HASH_MAP_FOREACH_STR_KEY_PTR(&ce->properties_info, name, prop) {
-			if (prop->ce == ce || !prop->hooks) {
+			if (!(prop->flags & ZEND_ACC_GENERIC_CLONE) || !prop->hooks) {
 				continue;
 			}
 
 			const zend_property_info *parent_prop = zend_hash_find_ptr(&prop->ce->properties_info, name);
-			if (!parent_prop || parent_prop == prop || !parent_prop->hooks) {
+			if (!parent_prop || !parent_prop->hooks) {
 				continue;
 			}
 
