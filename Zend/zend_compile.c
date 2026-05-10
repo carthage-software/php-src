@@ -8051,6 +8051,22 @@ ZEND_API void zend_set_function_arg_flags(zend_function *func) /* {{{ */
 }
 /* }}} */
 
+static zend_type_list *zend_arena_deep_copy_type_list(zend_type_list *src)
+{
+	size_t list_size = ZEND_TYPE_LIST_SIZE(src->num_types);
+	zend_type_list *copy = zend_arena_alloc(&CG(arena), list_size);
+	memcpy(copy, src, list_size);
+	for (uint32_t i = 0; i < copy->num_types; i++) {
+		if (ZEND_TYPE_HAS_LIST(copy->types[i])) {
+			ZEND_TYPE_SET_PTR(copy->types[i], zend_arena_deep_copy_type_list(ZEND_TYPE_LIST(copy->types[i])));
+		} else if (ZEND_TYPE_HAS_NAME(copy->types[i])) {
+			zend_string_addref(ZEND_TYPE_NAME(copy->types[i]));
+		}
+	}
+
+	return copy;
+}
+
 static zend_type zend_compile_single_typename(zend_ast *ast)
 {
 	ZEND_ASSERT(!(ast->attr & ZEND_TYPE_NULLABLE));
@@ -8088,17 +8104,9 @@ static zend_type zend_compile_single_typename(zend_ast *ast)
 				if (ZEND_TYPE_HAS_NAME(result)) {
 					zend_string_addref(ZEND_TYPE_NAME(result));
 				} else if (ZEND_TYPE_HAS_LIST(result)) {
-					zend_type_list *orig_list = ZEND_TYPE_LIST(result);
-					size_t list_size = ZEND_TYPE_LIST_SIZE(orig_list->num_types);
-					zend_type_list *copy = zend_arena_alloc(&CG(arena), list_size);
-					memcpy(copy, orig_list, list_size);
-					for (uint32_t i = 0; i < copy->num_types; i++) {
-						if (ZEND_TYPE_HAS_NAME(copy->types[i])) {
-							zend_string_addref(ZEND_TYPE_NAME(copy->types[i]));
-						}
-					}
-					ZEND_TYPE_SET_PTR(result, copy);
+					ZEND_TYPE_SET_PTR(result, zend_arena_deep_copy_type_list(ZEND_TYPE_LIST(result)));
 				}
+
 				return result;
 			}
 
