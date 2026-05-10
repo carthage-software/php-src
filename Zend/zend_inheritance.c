@@ -906,22 +906,32 @@ static bool zend_get_inheritance_binding_full(
 
 	if (!ce->generic_types) return false;
 
+	uint32_t intermediate_cap = (target && target->generic_parameters) ? target->generic_parameters->count : 0;
+	if (intermediate_cap == 0) return false;
+	ALLOCA_FLAG(use_heap)
+	zend_type *intermediate_args = (zend_type *) do_alloca(sizeof(zend_type) * intermediate_cap, use_heap);
+	bool found = false;
+
 	if ((ce->ce_flags & ZEND_ACC_RESOLVED_PARENT)
 			&& ce->parent && ce->generic_types->extends) {
-		zend_type intermediate_args[ZEND_GENERIC_MAX_PARAMS];
 		uint32_t intermediate_arity;
 		if (zend_get_inheritance_binding_full(ce->parent, target,
-				intermediate_args, ZEND_GENERIC_MAX_PARAMS, &intermediate_arity)) {
+				intermediate_args, intermediate_cap, &intermediate_arity)) {
 			const zend_type *ce_to_parent;
 			uint32_t ce_to_parent_arity;
 			if (zend_get_inheritance_binding(ce, ce->parent, &ce_to_parent, &ce_to_parent_arity)) {
-				if (intermediate_arity > out_capacity) return false;
+				if (intermediate_arity > out_capacity) {
+					goto done;
+				}
+
 				for (uint32_t i = 0; i < intermediate_arity; i++) {
 					out_args[i] = zend_substitute_leaf_type_param(
 						intermediate_args[i], ce_to_parent, ce_to_parent_arity);
 				}
+
 				*out_arity = intermediate_arity;
-				return true;
+				found = true;
+				goto done;
 			}
 		}
 	}
@@ -935,23 +945,29 @@ static bool zend_get_inheritance_binding_full(
 			zend_class_entry *intermediate = zend_find_interface_by_name(ce, named->name);
 			if (!intermediate || intermediate == target) continue;
 
-			zend_type intermediate_args[ZEND_GENERIC_MAX_PARAMS];
 			uint32_t intermediate_arity;
 			if (!zend_get_inheritance_binding_full(intermediate, target,
-					intermediate_args, ZEND_GENERIC_MAX_PARAMS, &intermediate_arity)) {
+					intermediate_args, intermediate_cap, &intermediate_arity)) {
 				continue;
 			}
-			if (intermediate_arity > out_capacity) return false;
+
+			if (intermediate_arity > out_capacity) {
+				goto done;
+			}
+
 			for (uint32_t i = 0; i < intermediate_arity; i++) {
 				out_args[i] = zend_substitute_leaf_type_param(
 					intermediate_args[i], named->args, named->count);
 			}
 			*out_arity = intermediate_arity;
-			return true;
+			found = true;
+			goto done;
 		} ZEND_HASH_FOREACH_END();
 	}
 
-	return false;
+	done:
+		free_alloca(intermediate_args, use_heap);
+		return found;
 }
 
 static bool zend_get_inheritance_binding_full_cached(
@@ -1039,19 +1055,25 @@ static zend_type zend_substitute_proto_type(
 		return fallback;
 	}
 
-	zend_type args[ZEND_GENERIC_MAX_PARAMS];
+	uint32_t cap = proto_scope->generic_parameters->count;
+	if (cap == 0) {
+		return fallback;
+	}
+
+	ALLOCA_FLAG(use_heap)
+	zend_type *args = (zend_type *) do_alloca(sizeof(zend_type) * cap, use_heap);
 	uint32_t arity;
-	if (!zend_get_inheritance_binding_full_cached(ce, proto_scope, args, ZEND_GENERIC_MAX_PARAMS, &arity)
-			&& !zend_get_target_default_args(proto_scope, args, ZEND_GENERIC_MAX_PARAMS, &arity)) {
-		return fallback;
+	zend_type result;
+	if (!zend_get_inheritance_binding_full_cached(ce, proto_scope, args, cap, &arity)
+			&& !zend_get_target_default_args(proto_scope, args, cap, &arity)) {
+		result = fallback;
+	} else {
+		zend_type substituted = zend_substitute_leaf_type_param(*pre_erasure, args, arity);
+		result = ZEND_TYPE_HAS_TYPE_PARAMETER(substituted) ? fallback : substituted;
 	}
 
-	zend_type substituted = zend_substitute_leaf_type_param(*pre_erasure, args, arity);
-	if (ZEND_TYPE_HAS_TYPE_PARAMETER(substituted)) {
-		return fallback;
-	}
-
-    return substituted;
+	free_alloca(args, use_heap);
+	return result;
 }
 
 static const zend_type *zend_get_param_pre_erasure(const zend_function *proto, uint32_t param_idx)
@@ -1589,16 +1611,22 @@ static zend_function *zend_maybe_substitute_inherited_method(
 	}
 
 	zend_class_entry *defining_ce = parent_fn->common.scope;
-	zend_type bound_args[ZEND_GENERIC_MAX_PARAMS];
+	uint32_t cap = defining_ce->generic_parameters->count;
+	if (cap == 0) {
+		return NULL;
+	}
+
+	ALLOCA_FLAG(use_heap)
+	zend_type *bound_args = (zend_type *) do_alloca(sizeof(zend_type) * cap, use_heap);
 	uint32_t bound_arity = 0;
-	bool have = zend_get_inheritance_binding_full_cached(
-		ce, defining_ce, bound_args, ZEND_GENERIC_MAX_PARAMS, &bound_arity);
+	bool have = zend_get_inheritance_binding_full_cached(ce, defining_ce, bound_args, cap, &bound_arity);
 
 	if (!have) {
-		have = zend_get_target_default_args(defining_ce, bound_args, ZEND_GENERIC_MAX_PARAMS, &bound_arity);
+		have = zend_get_target_default_args(defining_ce, bound_args, cap, &bound_arity);
 	}
 
 	if (!have) {
+		free_alloca(bound_args, use_heap);
 		return NULL;
 	}
 
@@ -1607,6 +1635,7 @@ static zend_function *zend_maybe_substitute_inherited_method(
 	clone->op_array.fn_flags &= ~ZEND_ACC_IMMUTABLE;
 
 	zend_substitute_trait_method_arg_info(clone, parent_fn, bound_args, bound_arity);
+	free_alloca(bound_args, use_heap);
 	if (clone->op_array.arg_info == parent_fn->op_array.arg_info) {
 		return NULL;
 	}
@@ -1947,20 +1976,22 @@ static void do_inherit_property(zend_property_info *parent_info, zend_string *ke
 		zend_property_info *info = parent_info;
 		if (parent_info->ce->generic_types && parent_info->ce->generic_types->properties) {
 			zval *zv = zend_hash_find(parent_info->ce->generic_types->properties, key);
-			if (zv) {
+			if (zv && parent_info->ce->generic_parameters && parent_info->ce->generic_parameters->count > 0) {
 				const zend_type *pre_erasure = (const zend_type *) Z_PTR_P(zv);
-				zend_type bound_args[ZEND_GENERIC_MAX_PARAMS];
+				uint32_t cap = parent_info->ce->generic_parameters->count;
+				ALLOCA_FLAG(use_heap)
+				zend_type *bound_args = (zend_type *) do_alloca(sizeof(zend_type) * cap, use_heap);
 				uint32_t bound_arity = 0;
-				bool have_args = zend_get_inheritance_binding_full_cached(
-					ce, parent_info->ce, bound_args, ZEND_GENERIC_MAX_PARAMS, &bound_arity);
-
+				bool have_args = zend_get_inheritance_binding_full_cached(ce, parent_info->ce, bound_args, cap, &bound_arity);
 				if (!have_args) {
-					have_args = zend_get_target_default_args(
-						parent_info->ce, bound_args, ZEND_GENERIC_MAX_PARAMS, &bound_arity);
+					have_args = zend_get_target_default_args(parent_info->ce, bound_args, cap, &bound_arity);
 				}
 
+				zend_type sub = have_args
+					? zend_substitute_leaf_type_param(*pre_erasure, bound_args, bound_arity)
+					: (zend_type) ZEND_TYPE_INIT_NONE(0);
+				free_alloca(bound_args, use_heap);
 				if (have_args) {
-					zend_type sub = zend_substitute_leaf_type_param(*pre_erasure, bound_args, bound_arity);
 					if (!ZEND_TYPE_HAS_TYPE_PARAMETER(sub)) {
 						zend_property_info *clone = zend_arena_alloc(&CG(arena), sizeof(*clone));
 						*clone = *parent_info;
@@ -2957,19 +2988,23 @@ static void zend_add_trait_method(zend_class_entry *ce, zend_string *name, zend_
 
 	if (fn->type == ZEND_USER_FUNCTION && fn->common.scope && fn->common.scope->generic_parameters) {
 		const zend_type_named_with_args *binding = zend_find_trait_use_binding_by_name(ce, fn->common.scope->name);
-		zend_type default_args[ZEND_GENERIC_MAX_PARAMS];
+		uint32_t cap = fn->common.scope->generic_parameters->count;
+		ALLOCA_FLAG(use_heap)
+		zend_type *default_args = (zend_type *) do_alloca(sizeof(zend_type) * cap, use_heap);
 		const zend_type *bind_args = NULL;
 		uint32_t bind_arity = 0;
 		if (binding) {
 			bind_args = binding->args;
 			bind_arity = binding->count;
-		} else if (zend_get_target_default_args(fn->common.scope, default_args, ZEND_GENERIC_MAX_PARAMS, &bind_arity)) {
+		} else if (zend_get_target_default_args(fn->common.scope, default_args, cap, &bind_arity)) {
 			bind_args = default_args;
 		}
 
 		if (bind_args) {
 			zend_substitute_trait_method_arg_info(new_fn, fn, bind_args, bind_arity);
 		}
+
+		free_alloca(default_args, use_heap);
 	}
 
 	fn = zend_hash_update_ptr(&ce->function_table, key, new_fn);
@@ -3533,16 +3568,19 @@ static void zend_do_traits_property_binding(zend_class_entry *ce, zend_class_ent
 
 			zend_type type = property_info->type;
 			const zend_type *pre_erasure = zend_get_trait_property_pre_erasure(traits[i], prop_name);
-			if (pre_erasure) {
+			if (pre_erasure && traits[i]->generic_parameters && traits[i]->generic_parameters->count > 0) {
 				const zend_type *bind_args;
 				uint32_t bind_arity;
-				zend_type default_args[ZEND_GENERIC_MAX_PARAMS];
+				uint32_t cap = traits[i]->generic_parameters->count;
+				ALLOCA_FLAG(use_heap)
+				zend_type *default_args = (zend_type *) do_alloca(sizeof(zend_type) * cap, use_heap);
 				if (zend_get_trait_use_binding(ce, i, &bind_args, &bind_arity)) {
 					type = zend_substitute_leaf_type_param(*pre_erasure, bind_args, bind_arity);
-				} else if (zend_get_target_default_args(traits[i], default_args, ZEND_GENERIC_MAX_PARAMS, &bind_arity)) {
+				} else if (zend_get_target_default_args(traits[i], default_args, cap, &bind_arity)) {
 					type = zend_substitute_leaf_type_param(*pre_erasure, default_args, bind_arity);
 				}
 
+				free_alloca(default_args, use_heap);
 				if (ZEND_TYPE_HAS_TYPE_PARAMETER(type)) {
 					type = property_info->type;
 				}
@@ -4274,10 +4312,13 @@ static bool zend_diamond_types_equal(zend_type a, zend_type b)
 }
 
 typedef struct {
-	zend_type args[ZEND_GENERIC_MAX_PARAMS];
 	uint32_t arity;
 	zend_string *first_source_name;
+	zend_type args[1];
 } zend_diamond_record;
+
+#define ZEND_DIAMOND_RECORD_SIZE(arity) \
+	(offsetof(zend_diamond_record, args) + sizeof(zend_type) * (arity))
 
 static zend_string *zend_diamond_format_args(const zend_type *args, uint32_t arity)
 {
@@ -4342,7 +4383,7 @@ static void zend_diamond_record_or_check(
 			ZSTR_VAL(target->name), ZSTR_VAL(next_args), ZSTR_VAL(source_name));
 	}
 
-	zend_diamond_record *record = emalloc(sizeof(zend_diamond_record));
+	zend_diamond_record *record = emalloc(ZEND_DIAMOND_RECORD_SIZE(arity));
 	record->arity = arity;
 	record->first_source_name = source_name;
 	for (uint32_t j = 0; j < arity; j++) {
@@ -4388,9 +4429,15 @@ static void zend_diamond_collect_via_provider(
 		zend_class_entry *target = provider->interfaces[i];
 		if (!target || !target->generic_parameters) continue;
 
-		zend_type via[ZEND_GENERIC_MAX_PARAMS];
+		uint32_t cap = target->generic_parameters->count;
+		if (cap == 0) continue;
+		ALLOCA_FLAG(use_heap)
+		zend_type *via = (zend_type *) do_alloca(sizeof(zend_type) * cap, use_heap);
 		uint32_t via_arity;
-		if (!zend_get_inheritance_binding_full_cached(provider, target, via, ZEND_GENERIC_MAX_PARAMS, &via_arity)) continue;
+		if (!zend_get_inheritance_binding_full_cached(provider, target, via, cap, &via_arity)) {
+			free_alloca(via, use_heap);
+			continue;
+		}
 
 		if (ce_to_provider) {
 			for (uint32_t j = 0; j < via_arity; j++) {
@@ -4400,6 +4447,7 @@ static void zend_diamond_collect_via_provider(
 
 		zend_diamond_record_or_check(ce, target, via, via_arity,
 			source_name, records);
+		free_alloca(via, use_heap);
 	}
 }
 
