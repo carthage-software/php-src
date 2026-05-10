@@ -480,6 +480,7 @@ static zend_generic_type_table *zend_persist_generic_type_table(zend_generic_typ
 	}
 
 	zend_generic_type_table *persisted = zend_shared_memdup_put_free(table, sizeof(*table));
+	persisted->persisted = true;
 	if (persisted->return_type) {
 		persisted->return_type = zend_shared_memdup_put_free(persisted->return_type, sizeof(zend_type));
 		zend_persist_type(persisted->return_type);
