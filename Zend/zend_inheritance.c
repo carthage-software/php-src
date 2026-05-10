@@ -4172,6 +4172,278 @@ static const zend_type *zend_lookup_inheritance_args(const HashTable *side_table
 	return boxed;
 }
 
+typedef enum _zend_variance_polarity {
+	ZEND_VAR_POL_COVARIANT,
+	ZEND_VAR_POL_CONTRAVARIANT,
+	ZEND_VAR_POL_INVARIANT,
+} zend_variance_polarity;
+
+static zend_variance_polarity zend_variance_compose(
+		zend_variance_polarity outer, zend_variance_polarity slot)
+{
+	if (outer == ZEND_VAR_POL_INVARIANT || slot == ZEND_VAR_POL_INVARIANT) {
+		return ZEND_VAR_POL_INVARIANT;
+	}
+	return (outer == slot) ? ZEND_VAR_POL_COVARIANT : ZEND_VAR_POL_CONTRAVARIANT;
+}
+
+static zend_variance_polarity zend_variance_polarity_from(zend_generic_variance v)
+{
+	switch (v) {
+		case ZEND_GENERIC_VARIANCE_COVARIANT:     return ZEND_VAR_POL_COVARIANT;
+		case ZEND_GENERIC_VARIANCE_CONTRAVARIANT: return ZEND_VAR_POL_CONTRAVARIANT;
+		default:                                  return ZEND_VAR_POL_INVARIANT;
+	}
+}
+
+static const char *zend_variance_polarity_name(zend_variance_polarity p)
+{
+	switch (p) {
+		case ZEND_VAR_POL_COVARIANT:     return "covariant";
+		case ZEND_VAR_POL_CONTRAVARIANT: return "contravariant";
+		default:                         return "invariant";
+	}
+}
+
+static const char *zend_variance_marker(zend_generic_variance v)
+{
+	switch (v) {
+		case ZEND_GENERIC_VARIANCE_COVARIANT:     return "+";
+		case ZEND_GENERIC_VARIANCE_CONTRAVARIANT: return "-";
+		default:                                  return "";
+	}
+}
+
+static bool zend_variance_compatible(
+		zend_generic_variance declared, zend_variance_polarity at)
+{
+	if (declared == ZEND_GENERIC_VARIANCE_INVARIANT) {
+		return true;
+	}
+
+	if (at == ZEND_VAR_POL_INVARIANT) {
+		return false;
+	}
+
+	return zend_variance_polarity_from(declared) == at;
+}
+
+static void zend_variance_walk(
+		zend_class_entry *ce,
+		const zend_generic_parameter_list *params,
+		zend_type t,
+		zend_variance_polarity pol)
+{
+	if (ZEND_TYPE_HAS_TYPE_PARAMETER(t)) {
+		const zend_type_parameter_ref *ref = ZEND_TYPE_TYPE_PARAMETER(t);
+		if (ref->origin != ZEND_GENERIC_ORIGIN_CLASS_LIKE) {
+			return;
+		}
+
+		ZEND_ASSERT(ref->index < params->count);
+		zend_generic_variance declared = params->parameters[ref->index].variance;
+		if (!zend_variance_compatible(declared, pol)) {
+			zend_error_noreturn(E_COMPILE_ERROR,
+				"Type parameter %s declared %s (%sT) cannot appear in %s position",
+				ZSTR_VAL(ref->name),
+				zend_variance_polarity_name(zend_variance_polarity_from(declared)),
+				zend_variance_marker(declared),
+				zend_variance_polarity_name(pol));
+		}
+
+		return;
+	}
+
+	if (ZEND_TYPE_HAS_LIST(t)) {
+		const zend_type_list *list = ZEND_TYPE_LIST(t);
+		for (uint32_t i = 0; i < list->num_types; i++) {
+			zend_variance_walk(ce, params, list->types[i], pol);
+		}
+
+		return;
+	}
+
+	if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(t)) {
+		const zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(t);
+		zend_class_entry *target = named->name
+			? zend_lookup_class_ex(named->name, NULL, ZEND_FETCH_CLASS_NO_AUTOLOAD)
+			: NULL;
+		for (uint32_t i = 0; i < named->count; i++) {
+			zend_variance_polarity slot;
+			if (target && target->generic_parameters && i < target->generic_parameters->count) {
+				slot = zend_variance_polarity_from(target->generic_parameters->parameters[i].variance);
+			} else {
+				slot = ZEND_VAR_POL_INVARIANT;
+			}
+
+			zend_variance_walk(ce, params, named->args[i], zend_variance_compose(pol, slot));
+		}
+
+		return;
+	}
+}
+
+static void zend_variance_walk_function(
+		zend_class_entry *ce,
+		const zend_generic_parameter_list *params,
+		const zend_function *fn)
+{
+	if (!ZEND_USER_CODE(fn->common.type)) {
+		return;
+	}
+
+	const zend_op_array *op_array = &fn->op_array;
+	if (!op_array->generic_types && !op_array->generic_parameters) {
+		return;
+	}
+
+	if (op_array->generic_types) {
+		if (op_array->generic_types->parameters) {
+			zval *zv;
+			zend_ulong h;
+			ZEND_HASH_FOREACH_NUM_KEY_VAL(op_array->generic_types->parameters, h, zv) {
+				const zend_type *t = (const zend_type *) Z_PTR_P(zv);
+				zend_variance_walk(ce, params, *t, ZEND_VAR_POL_CONTRAVARIANT);
+			} ZEND_HASH_FOREACH_END();
+			(void) h;
+		}
+
+		if (op_array->generic_types->return_type) {
+			zend_variance_walk(ce, params, *op_array->generic_types->return_type, ZEND_VAR_POL_COVARIANT);
+		}
+	}
+
+	if (op_array->generic_parameters) {
+		for (uint32_t i = 0; i < op_array->generic_parameters->count; i++) {
+			const zend_generic_parameter *p = &op_array->generic_parameters->parameters[i];
+			if (ZEND_TYPE_IS_SET(p->bound_pre_erasure)) {
+				zend_variance_walk(ce, params, p->bound_pre_erasure, ZEND_VAR_POL_INVARIANT);
+			}
+
+			if (ZEND_TYPE_IS_SET(p->default_pre_erasure)) {
+				zend_variance_walk(ce, params, p->default_pre_erasure, ZEND_VAR_POL_INVARIANT);
+			}
+		}
+	}
+}
+
+static zend_variance_polarity zend_variance_polarity_for_property(const zend_property_info *prop)
+{
+	if (prop->hooks) {
+		const zend_function *get = prop->hooks[ZEND_PROPERTY_HOOK_GET];
+		const zend_function *set = prop->hooks[ZEND_PROPERTY_HOOK_SET];
+		bool by_ref_get = get && (get->common.fn_flags & ZEND_ACC_RETURN_REFERENCE);
+		if (by_ref_get || (get && set)) {
+			return ZEND_VAR_POL_INVARIANT;
+		}
+
+		if (get) {
+			return ZEND_VAR_POL_COVARIANT;
+		}
+
+		if (set) {
+			return ZEND_VAR_POL_CONTRAVARIANT;
+		}
+
+		return ZEND_VAR_POL_INVARIANT;
+	}
+
+	if (prop->flags & ZEND_ACC_READONLY) {
+		return ZEND_VAR_POL_COVARIANT;
+	}
+
+	return ZEND_VAR_POL_INVARIANT;
+}
+
+void zend_check_generic_variance_markers(zend_class_entry *ce)
+{
+	if (!ce->generic_parameters) {
+		return;
+	}
+
+	bool any_marked = false;
+	for (uint32_t i = 0; i < ce->generic_parameters->count; i++) {
+		if (ce->generic_parameters->parameters[i].variance != ZEND_GENERIC_VARIANCE_INVARIANT) {
+			any_marked = true;
+			break;
+		}
+	}
+
+	if (!any_marked) {
+		return;
+	}
+
+	const zend_generic_parameter_list *params = ce->generic_parameters;
+
+	for (uint32_t i = 0; i < params->count; i++) {
+		const zend_generic_parameter *p = &params->parameters[i];
+		if (ZEND_TYPE_IS_SET(p->bound_pre_erasure)) {
+			zend_variance_walk(ce, params, p->bound_pre_erasure, ZEND_VAR_POL_INVARIANT);
+		}
+
+		if (ZEND_TYPE_IS_SET(p->default_pre_erasure)) {
+			zend_variance_walk(ce, params, p->default_pre_erasure, ZEND_VAR_POL_INVARIANT);
+		}
+	}
+
+	zend_function *fn;
+	ZEND_HASH_MAP_FOREACH_PTR(&ce->function_table, fn) {
+		if (fn->common.fn_flags & (ZEND_ACC_STATIC | ZEND_ACC_CTOR)) {
+			continue;
+		}
+
+		if (fn->common.scope != ce) {
+			continue;
+		}
+
+		zend_variance_walk_function(ce, params, fn);
+	} ZEND_HASH_FOREACH_END();
+
+	if (ce->generic_types && ce->generic_types->properties) {
+		zend_property_info *prop_info;
+		ZEND_HASH_FOREACH_PTR(&ce->properties_info, prop_info) {
+			if (prop_info->ce != ce) {
+				continue;
+			}
+
+			zend_variance_polarity prop_pol = zend_variance_polarity_for_property(prop_info);
+			zval *pre_zv = zend_hash_find(ce->generic_types->properties, prop_info->name);
+			if (pre_zv) {
+				const zend_type *pre = (const zend_type *) Z_PTR_P(pre_zv);
+				zend_variance_walk(ce, params, *pre, prop_pol);
+			}
+
+			if (prop_info->hooks) {
+				for (uint32_t i = 0; i < ZEND_PROPERTY_HOOK_COUNT; i++) {
+					if (prop_info->hooks[i]) {
+						zend_variance_walk_function(ce, params, prop_info->hooks[i]);
+					}
+				}
+			}
+		} ZEND_HASH_FOREACH_END();
+	}
+
+	if (ce->generic_types) {
+		if (ce->generic_types->extends) {
+			zend_variance_walk(ce, params, *ce->generic_types->extends, ZEND_VAR_POL_COVARIANT);
+		}
+
+		if (ce->generic_types->implements) {
+			zval *zv;
+			ZEND_HASH_FOREACH_VAL(ce->generic_types->implements, zv) {
+				zend_variance_walk(ce, params, *(const zend_type *) Z_PTR_P(zv), ZEND_VAR_POL_COVARIANT);
+			} ZEND_HASH_FOREACH_END();
+		}
+
+		if (ce->generic_types->trait_uses) {
+			zval *zv;
+			ZEND_HASH_FOREACH_VAL(ce->generic_types->trait_uses, zv) {
+				zend_variance_walk(ce, params, *(const zend_type *) Z_PTR_P(zv), ZEND_VAR_POL_COVARIANT);
+			} ZEND_HASH_FOREACH_END();
+		}
+	}
+}
+
 static void zend_check_generic_link_bounds(
 		zend_class_entry *target_ce,
 		const zend_type *args_box,

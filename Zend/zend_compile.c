@@ -10540,6 +10540,8 @@ static void zend_compile_class_decl(znode *result, const zend_ast *ast, bool top
 		zend_verify_abstract_class(ce);
 	}
 
+	zend_check_generic_variance_markers(ce);
+
 	if (ce->generic_parameters) {
 		zend_generic_scope_pop();
 	}
