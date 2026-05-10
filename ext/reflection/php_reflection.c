@@ -1519,6 +1519,30 @@ static reflection_type_kind get_type_kind(zend_type type) {
 	return NAMED_TYPE;
 }
 
+static zend_class_entry *reflection_resolve_declaring_class(zend_class_entry *ce)
+{
+	return (ce && ce->generic_parameters) ? ce : NULL;
+}
+
+static void reflection_resolve_fn_context(
+		zend_function *fptr,
+		zend_class_entry **declaring_class_out,
+		zend_function **declaring_fn_out)
+{
+	*declaring_class_out = NULL;
+	*declaring_fn_out = NULL;
+	if (fptr->type != ZEND_USER_FUNCTION) {
+		return;
+	}
+
+	const zend_op_array *op = &fptr->op_array;
+	if (op->generic_parameters) {
+		*declaring_fn_out = fptr;
+	}
+
+	*declaring_class_out = reflection_resolve_declaring_class(op->scope);
+}
+
 /* {{{ reflection_type_factory_ex */
 static void reflection_type_factory_ex(
 		zend_type type, zval *object, bool legacy_behavior,
@@ -2856,22 +2880,16 @@ ZEND_METHOD(ReflectionParameter, getType)
 	}
 
 	zend_type pre_erasure = (zend_type) ZEND_TYPE_INIT_NONE(0);
-	zend_class_entry *declaring_class = NULL;
-	zend_function *declaring_fn = NULL;
+	zend_class_entry *declaring_class;
+	zend_function *declaring_fn;
+	reflection_resolve_fn_context(param->fptr, &declaring_class, &declaring_fn);
 	if (param->fptr->type == ZEND_USER_FUNCTION) {
 		zend_op_array *op = &param->fptr->op_array;
 		if (op->generic_types && op->generic_types->parameters) {
 			zend_type *boxed = zend_hash_index_find_ptr(op->generic_types->parameters, param->offset);
 			if (boxed) {
 				pre_erasure = *boxed;
-				declaring_fn = param->fptr;
 			}
-		} else if (op->generic_parameters) {
-			declaring_fn = param->fptr;
-		}
-
-		if (op->scope && op->scope->generic_parameters) {
-			declaring_class = op->scope;
 		}
 	}
 
@@ -3749,18 +3767,13 @@ ZEND_METHOD(ReflectionFunctionAbstract, getReturnType)
 	}
 
 	zend_type pre_erasure = (zend_type) ZEND_TYPE_INIT_NONE(0);
-	zend_class_entry *declaring_class = NULL;
-	zend_function *declaring_fn = NULL;
+	zend_class_entry *declaring_class;
+	zend_function *declaring_fn;
+	reflection_resolve_fn_context(fptr, &declaring_class, &declaring_fn);
 	if (fptr->type == ZEND_USER_FUNCTION) {
 		zend_op_array *op = &fptr->op_array;
 		if (op->generic_types && op->generic_types->return_type) {
 			pre_erasure = *op->generic_types->return_type;
-		}
-		if (op->generic_parameters) {
-			declaring_fn = fptr;
-		}
-		if (op->scope && op->scope->generic_parameters) {
-			declaring_class = op->scope;
 		}
 	}
 
@@ -6516,7 +6529,6 @@ ZEND_METHOD(ReflectionProperty, getType)
 	}
 
 	zend_type pre_erasure = (zend_type) ZEND_TYPE_INIT_NONE(0);
-	zend_class_entry *declaring_class = NULL;
 	zend_class_entry *ce = ref->prop->ce;
 	if (ce && ce->generic_types && ce->generic_types->properties) {
 		zend_type *boxed = zend_hash_find_ptr(ce->generic_types->properties, ref->prop->name);
@@ -6525,12 +6537,8 @@ ZEND_METHOD(ReflectionProperty, getType)
 		}
 	}
 
-	if (ce && ce->generic_parameters) {
-		declaring_class = ce;
-	}
-
 	reflection_type_factory_ex(ref->prop->type, return_value, true,
-		pre_erasure, declaring_class, NULL);
+		pre_erasure, reflection_resolve_declaring_class(ce), NULL);
 }
 /* }}} */
 
@@ -8721,6 +8729,24 @@ ZEND_METHOD(ReflectionClass, getGenericArgumentsForParentClass)
 	RETURN_EMPTY_ARRAY();
 }
 
+static bool reflection_try_build_named_args_from_table(HashTable *ht, zend_class_entry *ce, zend_string *name, zval *return_value)
+{
+	if (!ht) {
+		return false;
+	}
+
+	zval *zv;
+	ZEND_HASH_FOREACH_VAL(ht, zv) {
+		zend_type *boxed = (zend_type *) Z_PTR_P(zv);
+		zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
+		if (zend_string_equals_ci(named->name, name)) {
+			reflection_build_named_args_list(return_value, boxed, ce);
+			return true;
+		}
+	} ZEND_HASH_FOREACH_END();
+	return false;
+}
+
 ZEND_METHOD(ReflectionClass, getGenericArgumentsForParentInterface)
 {
 	reflection_object *intern;
@@ -8731,6 +8757,11 @@ ZEND_METHOD(ReflectionClass, getGenericArgumentsForParentInterface)
 		Z_PARAM_STR(name)
 	ZEND_PARSE_PARAMETERS_END();
 	GET_REFLECTION_OBJECT_PTR(ce);
+
+	HashTable *ht = ce->generic_types ? ce->generic_types->implements : NULL;
+	if (reflection_try_build_named_args_from_table(ht, ce, name, return_value)) {
+		return;
+	}
 
 	bool is_ancestor = false;
 	if (ce->ce_flags & ZEND_ACC_LINKED) {
@@ -8753,18 +8784,6 @@ ZEND_METHOD(ReflectionClass, getGenericArgumentsForParentInterface)
 			"%s is not an ancestor interface of %s", ZSTR_VAL(name), ZSTR_VAL(ce->name));
 		RETURN_THROWS();
 	}
-
-	if (ce->generic_types && ce->generic_types->implements) {
-		zval *zv;
-		ZEND_HASH_FOREACH_VAL(ce->generic_types->implements, zv) {
-			zend_type *boxed = (zend_type *) Z_PTR_P(zv);
-			zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
-			if (zend_string_equals_ci(named->name, name)) {
-				reflection_build_named_args_list(return_value, boxed, ce);
-				return;
-			}
-		} ZEND_HASH_FOREACH_END();
-	}
 	RETURN_EMPTY_ARRAY();
 }
 
@@ -8779,6 +8798,11 @@ ZEND_METHOD(ReflectionClass, getGenericArgumentsForUsedTrait)
 	ZEND_PARSE_PARAMETERS_END();
 	GET_REFLECTION_OBJECT_PTR(ce);
 
+	HashTable *ht = ce->generic_types ? ce->generic_types->trait_uses : NULL;
+	if (reflection_try_build_named_args_from_table(ht, ce, name, return_value)) {
+		return;
+	}
+
 	bool is_used = false;
 	for (uint32_t i = 0; i < ce->num_traits; i++) {
 		if (zend_string_equals_ci(ce->trait_names[i].name, name)) {
@@ -8790,18 +8814,6 @@ ZEND_METHOD(ReflectionClass, getGenericArgumentsForUsedTrait)
 		zend_throw_exception_ex(reflection_exception_ptr, 0,
 			"%s is not a trait used by %s", ZSTR_VAL(name), ZSTR_VAL(ce->name));
 		RETURN_THROWS();
-	}
-
-	if (ce->generic_types && ce->generic_types->trait_uses) {
-		zval *zv;
-		ZEND_HASH_FOREACH_VAL(ce->generic_types->trait_uses, zv) {
-			zend_type *boxed = (zend_type *) Z_PTR_P(zv);
-			zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
-			if (zend_string_equals_ci(named->name, name)) {
-				reflection_build_named_args_list(return_value, boxed, ce);
-				return;
-			}
-		} ZEND_HASH_FOREACH_END();
 	}
 	RETURN_EMPTY_ARRAY();
 }
