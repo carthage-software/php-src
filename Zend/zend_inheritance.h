@@ -58,6 +58,7 @@ ZEND_API zend_class_entry *zend_try_early_bind(zend_class_entry *ce, zend_class_
 
 void zend_inheritance_check_override(const zend_class_entry *ce);
 void zend_check_generic_variance_markers(zend_class_entry *ce);
+void zend_check_function_variance_markers(zend_op_array *op_array);
 
 ZEND_API extern zend_class_entry* (*zend_inheritance_cache_get)(zend_class_entry *ce, zend_class_entry *parent, zend_class_entry **traits_and_interfaces);
 ZEND_API extern zend_class_entry* (*zend_inheritance_cache_add)(zend_class_entry *ce, zend_class_entry *proto, zend_class_entry *parent, zend_class_entry **traits_and_interfaces, HashTable *dependencies);

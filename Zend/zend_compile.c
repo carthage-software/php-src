@@ -754,7 +754,8 @@ static void zend_emit_verify_generic_arguments(zend_ast *turbofish_ast, uint8_t 
 	opline->result.num = 0;
 }
 
-static zend_generic_parameter_list *zend_compile_generic_type_parameter_list(zend_ast *list_ast) /* {{{ */
+static zend_generic_parameter_list *zend_compile_generic_type_parameter_list(
+		zend_ast *list_ast, zend_generic_origin origin) /* {{{ */
 {
 	if (!list_ast) {
 		return NULL;
@@ -808,7 +809,7 @@ static zend_generic_parameter_list *zend_compile_generic_type_parameter_list(zen
 
 	params->count = list->children;
 
-	zend_generic_scope_push(params, ZEND_GENERIC_ORIGIN_CLASS_LIKE);
+	zend_generic_scope_push(params, origin);
 	CG(generic_scope)->visible_count = 0;
 
 	for (uint32_t i = 0; i < list->children; i++) {
@@ -9678,12 +9679,14 @@ static zend_op_array *zend_compile_func_decl_ex(
 	 * so that parameter, return, and body type annotations erase correctly.
 	 * See GENERICS.md §6.9. */
 	if (generic_params_ast) {
-		op_array->generic_parameters = zend_compile_generic_type_parameter_list(generic_params_ast);
+		op_array->generic_parameters = zend_compile_generic_type_parameter_list(generic_params_ast, ZEND_GENERIC_ORIGIN_FUNCTION_LIKE);
 		zend_generic_scope_push(op_array->generic_parameters, ZEND_GENERIC_ORIGIN_FUNCTION_LIKE);
 	}
 
 	zend_compile_params(params_ast, return_type_ast,
 		is_method && zend_string_equals_literal(lcname, ZEND_TOSTRING_FUNC_NAME) ? IS_STRING : 0);
+
+	zend_check_function_variance_markers(op_array);
 
 	CG(in_static_member_type) = save_in_static_member_type;
 	if (CG(active_op_array)->fn_flags & ZEND_ACC_GENERATOR) {
@@ -10503,7 +10506,7 @@ static void zend_compile_class_decl(znode *result, const zend_ast *ast, bool top
 
 	if (decl->child[5]) {
 		ZEND_ASSERT(!(decl->flags & ZEND_ACC_ANON_CLASS));
-		ce->generic_parameters = zend_compile_generic_type_parameter_list(decl->child[5]);
+		ce->generic_parameters = zend_compile_generic_type_parameter_list(decl->child[5], ZEND_GENERIC_ORIGIN_CLASS_LIKE);
 		zend_generic_scope_push(ce->generic_parameters, ZEND_GENERIC_ORIGIN_CLASS_LIKE);
 	}
 
