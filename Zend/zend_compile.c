@@ -470,11 +470,17 @@ static void zend_generic_scope_pop(void) /* {{{ */
 static zend_generic_parameter *zend_generic_lookup_full(
 		zend_string *name, zend_generic_origin *origin_out, uint32_t *index_out) /* {{{ */
 {
-	zend_string *lc_name = zend_string_tolower(name);
+	zend_string *lc_name = NULL;
+	zend_generic_parameter *result = NULL;
 	for (zend_generic_scope_entry *e = CG(generic_scope); e; e = e->outer) {
-		if (e->shadowing_classes && zend_hash_exists(e->shadowing_classes, lc_name)) {
-			zend_string_release(lc_name);
-			return NULL;
+		if (e->shadowing_classes) {
+			if (!lc_name) {
+				lc_name = zend_string_tolower(name);
+			}
+
+			if (zend_hash_exists(e->shadowing_classes, lc_name)) {
+				goto done;
+			}
 		}
 
 		zend_generic_parameter_list *params = e->params;
@@ -482,14 +488,18 @@ static zend_generic_parameter *zend_generic_lookup_full(
 			if (zend_string_equals(params->parameters[i].name, name)) {
 				if (origin_out) *origin_out = e->origin;
 				if (index_out) *index_out = i;
-				zend_string_release(lc_name);
-				return &params->parameters[i];
+				result = &params->parameters[i];
+				goto done;
 			}
 		}
 	}
 
-	zend_string_release(lc_name);
-	return NULL;
+	done:
+	if (lc_name) {
+		zend_string_release(lc_name);
+	}
+
+	return result;
 }
 /* }}} */
 
@@ -9526,7 +9536,6 @@ static zend_op_array *zend_compile_func_decl_ex(
 	bool is_method = decl->kind == ZEND_AST_METHOD;
 	zend_string *lcname = NULL;
 	bool is_hook = decl->kind == ZEND_AST_PROPERTY_HOOK;
-	bool generic_scope_pushed = false;
 
 	zend_class_entry *orig_class_entry = CG(active_class_entry);
 	zend_op_array *orig_op_array = CG(active_op_array);
@@ -9632,7 +9641,6 @@ static zend_op_array *zend_compile_func_decl_ex(
 	if (generic_params_ast) {
 		op_array->generic_parameters = zend_compile_generic_type_parameter_list(generic_params_ast);
 		zend_generic_scope_push(op_array->generic_parameters, ZEND_GENERIC_ORIGIN_FUNCTION_LIKE);
-		generic_scope_pushed = true;
 	}
 
 	zend_compile_params(params_ast, return_type_ast,
@@ -9718,7 +9726,7 @@ static zend_op_array *zend_compile_func_decl_ex(
 		zend_string_release_ex(lcname, 0);
 	}
 
-	if (generic_scope_pushed) {
+	if (op_array->generic_parameters) {
 		zend_generic_scope_pop();
 	}
 
