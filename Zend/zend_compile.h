@@ -161,6 +161,7 @@ typedef struct _zend_generic_type_table {
 	HashTable   *implements;        /* implements index -> zend_type * */
 	HashTable   *trait_uses;        /* trait-use index -> zend_type * */
 	HashTable   *turbofish_args;    /* opline->extended_value -> zend_type * (NAMED_WITH_ARGS holding the call-site type arguments); index is stable across optimizer reorderings */
+	bool         persisted;         /* set by opcache when the table lives in SHM/file-cache memory; suppresses destruction */
 } zend_generic_type_table;
 
 /* Compile-time linked stack of in-scope generic type parameters. */
