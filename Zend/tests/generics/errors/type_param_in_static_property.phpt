@@ -7,4 +7,4 @@ class A<T> {
 }
 ?>
 --EXPECTF--
-Fatal error: Non-static type parameter T cannot be referenced from a static context in %s on line %d
+Fatal error: Type parameter T is bound to A and cannot be used in static context in %s on line %d
