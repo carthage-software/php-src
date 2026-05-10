@@ -14,4 +14,4 @@ class TooGeneralProducer implements Producer<Dog> {
 }
 ?>
 --EXPECTF--
-Fatal error: Declaration of TooGeneralProducer::produce(): Animal must be compatible with Producer::produce(): mixed in %s on line %d
+Fatal error: Declaration of TooGeneralProducer::produce(): Animal must be compatible with Producer::produce(): Dog in %s on line %d
