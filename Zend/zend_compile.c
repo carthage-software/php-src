@@ -436,6 +436,7 @@ void zend_init_compiler_data_structures(void) /* {{{ */
 	CG(type_arg_depth) = 0;
 	CG(type_arg_residual_token) = 0;
 	CG(generic_scope) = NULL;
+	CG(inheritance_binding_cache) = NULL;
 }
 /* }}} */
 

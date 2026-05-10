@@ -31,6 +31,15 @@ typedef enum {
 	INHERITANCE_SUCCESS = 2,
 } zend_inheritance_status;
 
+typedef struct _zend_inheritance_binding_cache {
+	const zend_class_entry *ce;
+	const zend_class_entry *target;
+	uint32_t arity;
+	bool present;
+	bool valid;
+	zend_type args[ZEND_GENERIC_MAX_PARAMS];
+} zend_inheritance_binding_cache;
+
 ZEND_API void zend_do_implement_interface(zend_class_entry *ce, zend_class_entry *iface);
 ZEND_API void zend_do_inheritance_ex(zend_class_entry *ce, zend_class_entry *parent_ce, bool checked);
 ZEND_API zend_inheritance_status zend_check_generic_arg_satisfies_bound(

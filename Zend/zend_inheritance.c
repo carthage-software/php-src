@@ -954,6 +954,50 @@ static bool zend_get_inheritance_binding_full(
 	return false;
 }
 
+static bool zend_get_inheritance_binding_full_cached(
+		const zend_class_entry *ce,
+		const zend_class_entry *target,
+		zend_type *out_args,
+		uint32_t out_capacity,
+		uint32_t *out_arity)
+{
+	zend_inheritance_binding_cache *cache = CG(inheritance_binding_cache);
+	if (cache && cache->present && cache->ce == ce && cache->target == target) {
+		if (!cache->valid) {
+			return false;
+		}
+
+		if (cache->arity > out_capacity) {
+			return false;
+		}
+
+		for (uint32_t i = 0; i < cache->arity; i++) {
+			out_args[i] = cache->args[i];
+		}
+
+		*out_arity = cache->arity;
+		return true;
+	}
+
+	bool result = zend_get_inheritance_binding_full(
+		ce, target, out_args, out_capacity, out_arity);
+
+	if (cache) {
+		cache->ce = ce;
+		cache->target = target;
+		cache->present = true;
+		cache->valid = result;
+		if (result && *out_arity <= ZEND_GENERIC_MAX_PARAMS) {
+			cache->arity = *out_arity;
+			for (uint32_t i = 0; i < *out_arity; i++) {
+				cache->args[i] = out_args[i];
+			}
+		}
+	}
+
+	return result;
+}
+
 /* Fills out_args with target_ce's parameter defaults if every parameter
  * has one. */
 static bool zend_get_target_default_args(
@@ -997,7 +1041,7 @@ static zend_type zend_substitute_proto_type(
 
 	zend_type args[ZEND_GENERIC_MAX_PARAMS];
 	uint32_t arity;
-	if (!zend_get_inheritance_binding_full(ce, proto_scope, args, ZEND_GENERIC_MAX_PARAMS, &arity)
+	if (!zend_get_inheritance_binding_full_cached(ce, proto_scope, args, ZEND_GENERIC_MAX_PARAMS, &arity)
 			&& !zend_get_target_default_args(proto_scope, args, ZEND_GENERIC_MAX_PARAMS, &arity)) {
 		return fallback;
 	}
@@ -1547,7 +1591,7 @@ static zend_function *zend_maybe_substitute_inherited_method(
 	zend_class_entry *defining_ce = parent_fn->common.scope;
 	zend_type bound_args[ZEND_GENERIC_MAX_PARAMS];
 	uint32_t bound_arity = 0;
-	bool have = zend_get_inheritance_binding_full(
+	bool have = zend_get_inheritance_binding_full_cached(
 		ce, defining_ce, bound_args, ZEND_GENERIC_MAX_PARAMS, &bound_arity);
 
 	if (!have) {
@@ -1907,7 +1951,7 @@ static void do_inherit_property(zend_property_info *parent_info, zend_string *ke
 				const zend_type *pre_erasure = (const zend_type *) Z_PTR_P(zv);
 				zend_type bound_args[ZEND_GENERIC_MAX_PARAMS];
 				uint32_t bound_arity = 0;
-				bool have_args = zend_get_inheritance_binding_full(
+				bool have_args = zend_get_inheritance_binding_full_cached(
 					ce, parent_info->ce, bound_args, ZEND_GENERIC_MAX_PARAMS, &bound_arity);
 
 				if (!have_args) {
@@ -2237,6 +2281,11 @@ ZEND_API void zend_do_inheritance_ex(zend_class_entry *ce, zend_class_entry *par
 	zend_property_info *property_info;
 	zend_string *key;
 
+	zend_inheritance_binding_cache binding_cache;
+	binding_cache.present = false;
+	zend_inheritance_binding_cache *prev_binding_cache = CG(inheritance_binding_cache);
+	CG(inheritance_binding_cache) = &binding_cache;
+
 	if (parent_ce && !(ce->ce_flags & ZEND_ACC_INTERFACE)) {
 		const zend_type *extends_args = NULL;
 		uint32_t arity = 0;
@@ -2460,6 +2509,8 @@ ZEND_API void zend_do_inheritance_ex(zend_class_entry *ce, zend_class_entry *par
 		}
 	}
 	ce->ce_flags |= parent_ce->ce_flags & (ZEND_HAS_STATIC_IN_METHODS | ZEND_ACC_HAS_TYPE_HINTS | ZEND_ACC_HAS_READONLY_PROPS | ZEND_ACC_USE_GUARDS | ZEND_ACC_NOT_SERIALIZABLE | ZEND_ACC_ALLOW_DYNAMIC_PROPERTIES);
+
+	CG(inheritance_binding_cache) = prev_binding_cache;
 }
 /* }}} */
 
@@ -4339,7 +4390,7 @@ static void zend_diamond_collect_via_provider(
 
 		zend_type via[ZEND_GENERIC_MAX_PARAMS];
 		uint32_t via_arity;
-		if (!zend_get_inheritance_binding_full(provider, target, via, ZEND_GENERIC_MAX_PARAMS, &via_arity)) continue;
+		if (!zend_get_inheritance_binding_full_cached(provider, target, via, ZEND_GENERIC_MAX_PARAMS, &via_arity)) continue;
 
 		if (ce_to_provider) {
 			for (uint32_t j = 0; j < via_arity; j++) {
