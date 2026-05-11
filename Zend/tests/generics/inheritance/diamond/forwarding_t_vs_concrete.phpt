@@ -1,11 +1,14 @@
 --TEST--
-Diamond: generic class forwarding T conflicts with a concrete arg on another path
+Diamond: a generic class forwarding T conflicts with a concrete arg on another path (accepted for the class form, LSP catches actual signature mismatches)
 --FILE--
 <?php
 interface Box<T> {}
 interface Wrapper<U> extends Box<U> {}
 
 class C<T> implements Wrapper<T>, Box<int> {}
+$c = new C();
+var_dump($c instanceof Box, $c instanceof Wrapper);
 ?>
---EXPECTF--
-Fatal error: C inherits Box<T> via Wrapper and Box<int> via Box in %s on line %d
+--EXPECT--
+bool(true)
+bool(true)
