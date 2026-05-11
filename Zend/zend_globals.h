@@ -177,6 +177,12 @@ struct _zend_compiler_globals {
 	bool in_static_member_type;
 
 	struct _zend_inheritance_binding_cache *inheritance_binding_cache;
+
+	struct {
+		zend_class_entry *target;
+		const zend_type *args;
+		uint32_t arity;
+	} inheritance_binding_hint;
 #ifdef ZTS
 	uint32_t copied_functions_count;
 #endif
