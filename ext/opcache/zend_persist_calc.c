@@ -239,6 +239,11 @@ static void zend_persist_type_calc(zend_type *type)
 			continue;
 		}
 
+		if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(*single_type)) {
+			zend_persist_type_calc(single_type);
+			continue;
+		}
+
 		if (ZEND_TYPE_HAS_NAME(*single_type)) {
 			zend_string *type_name = ZEND_TYPE_NAME(*single_type);
 			ADD_INTERNED_STRING(type_name);
