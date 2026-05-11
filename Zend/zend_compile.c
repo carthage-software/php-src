@@ -810,44 +810,53 @@ static zend_generic_parameter_list *zend_compile_generic_type_parameter_list(
 	params->count = list->children;
 
 	zend_generic_scope_push(params, origin);
-	CG(generic_scope)->visible_count = 0;
 
+	CG(generic_scope)->visible_count = list->children;
+	for (uint32_t i = 0; i < list->children; i++) {
+		zend_ast *param_ast = list->child[i];
+		if (!param_ast->child[1]) {
+			continue;
+		}
+
+		CG(generic_scope)->self_compiling = &params->parameters[i];
+		params->parameters[i].bound = zend_compile_typename(param_ast->child[1]);
+		if (zend_type_ast_has_generic_content(param_ast->child[1])) {
+			params->parameters[i].bound_pre_erasure = zend_compile_pre_erasure_typename(param_ast->child[1]);
+		}
+
+		CG(generic_scope)->self_compiling = NULL;
+	}
+
+	CG(generic_scope)->visible_count = 0;
 	for (uint32_t i = 0; i < list->children; i++) {
 		zend_ast *param_ast = list->child[i];
 		CG(generic_scope)->visible_count = i + 1;
-		CG(generic_scope)->self_compiling = &params->parameters[i];
-		if (param_ast->child[1]) {
-			params->parameters[i].bound = zend_compile_typename(param_ast->child[1]);
-			if (zend_type_ast_has_generic_content(param_ast->child[1])) {
-				params->parameters[i].bound_pre_erasure =
-					zend_compile_pre_erasure_typename(param_ast->child[1]);
-			}
+		if (!param_ast->child[2]) {
+			continue;
 		}
 
-		if (param_ast->child[2]) {
-			params->parameters[i].default_type = zend_compile_typename(param_ast->child[2]);
-			if (zend_type_ast_has_generic_content(param_ast->child[2])) {
-				params->parameters[i].default_pre_erasure =
-					zend_compile_pre_erasure_typename(param_ast->child[2]);
-			}
+		CG(generic_scope)->self_compiling = &params->parameters[i];
+		params->parameters[i].default_type = zend_compile_typename(param_ast->child[2]);
+		if (zend_type_ast_has_generic_content(param_ast->child[2])) {
+			params->parameters[i].default_pre_erasure = zend_compile_pre_erasure_typename(param_ast->child[2]);
+		}
 
-			if (ZEND_TYPE_IS_SET(params->parameters[i].bound)
-					&& zend_check_generic_arg_satisfies_bound(
-							NULL, params->parameters[i].default_type,
-							NULL, params->parameters[i].bound)
-						== INHERITANCE_ERROR) {
-				zend_type bound_display = ZEND_TYPE_IS_SET(params->parameters[i].bound_pre_erasure)
-					? params->parameters[i].bound_pre_erasure
-					: params->parameters[i].bound;
-				zend_type default_display = ZEND_TYPE_IS_SET(params->parameters[i].default_pre_erasure)
-					? params->parameters[i].default_pre_erasure
-					: params->parameters[i].default_type;
-				zend_string *bound_str = zend_type_to_string(bound_display);
-				zend_string *default_str = zend_type_to_string(default_display);
-				zend_error_noreturn(E_COMPILE_ERROR,
-					"Default %s for type parameter %s does not satisfy its bound %s",
-					ZSTR_VAL(default_str), ZSTR_VAL(params->parameters[i].name), ZSTR_VAL(bound_str));
-			}
+		if (ZEND_TYPE_IS_SET(params->parameters[i].bound)
+				&& zend_check_generic_arg_satisfies_bound(
+						NULL, params->parameters[i].default_type,
+						NULL, params->parameters[i].bound)
+					== INHERITANCE_ERROR) {
+			zend_type bound_display = ZEND_TYPE_IS_SET(params->parameters[i].bound_pre_erasure)
+				? params->parameters[i].bound_pre_erasure
+				: params->parameters[i].bound;
+			zend_type default_display = ZEND_TYPE_IS_SET(params->parameters[i].default_pre_erasure)
+				? params->parameters[i].default_pre_erasure
+				: params->parameters[i].default_type;
+			zend_string *bound_str = zend_type_to_string(bound_display);
+			zend_string *default_str = zend_type_to_string(default_display);
+			zend_error_noreturn(E_COMPILE_ERROR,
+				"Default %s for type parameter %s does not satisfy its bound %s",
+				ZSTR_VAL(default_str), ZSTR_VAL(params->parameters[i].name), ZSTR_VAL(bound_str));
 		}
 
 		CG(generic_scope)->self_compiling = NULL;
