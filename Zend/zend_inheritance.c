@@ -2037,6 +2037,8 @@ static zend_function *zend_iface_build_merged_clone(
 	memcpy(merged_fn, existing, sizeof(zend_op_array));
 	merged_fn->op_array.fn_flags &= ~ZEND_ACC_IMMUTABLE;
 	merged_fn->op_array.arg_info = has_return ? new_block + 1 : new_block;
+	ZEND_MAP_PTR_INIT(merged_fn->op_array.run_time_cache, NULL);
+	ZEND_MAP_PTR_INIT(merged_fn->op_array.static_variables_ptr, NULL);
 	return merged_fn;
 }
 
@@ -3585,6 +3587,8 @@ static void zend_trait_diamond_merge_method(
 	memcpy(merged_fn, existing, sizeof(zend_op_array));
 	merged_fn->op_array.fn_flags &= ~ZEND_ACC_IMMUTABLE;
 	merged_fn->op_array.arg_info = has_return ? new_block + 1 : new_block;
+	ZEND_MAP_PTR_INIT(merged_fn->op_array.run_time_cache, NULL);
+	ZEND_MAP_PTR_INIT(merged_fn->op_array.static_variables_ptr, NULL);
 	zval *slot = zend_hash_find_known_hash(&ce->function_table, key);
 	ZEND_ASSERT(slot != NULL && Z_PTR_P(slot) == existing);
 	Z_PTR_P(slot) = merged_fn;
