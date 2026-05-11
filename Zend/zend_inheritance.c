@@ -1727,9 +1727,6 @@ static ZEND_COLD ZEND_NORETURN void zend_diamond_uninhabited_intersection_error(
 	}
 }
 
-/* Element types in the result list are borrowed from the operands; the outer
- * list is freshly arena-allocated. Callers must keep the operands alive for
- * the result's lifetime. */
 static zend_type zend_synth_variance_merged_type(zend_type a, zend_type b, bool intersect)
 {
 	if (intersect) {
@@ -1751,19 +1748,27 @@ static zend_type zend_synth_variance_merged_type(zend_type a, zend_type b, bool 
 		if (ZEND_TYPE_HAS_LIST(a) && (ZEND_TYPE_FULL_MASK(a) & _ZEND_TYPE_INTERSECTION_BIT)) {
 			const zend_type_list *al = ZEND_TYPE_LIST(a);
 			for (uint32_t k = 0; k < al->num_types; k++) {
-				list->types[idx++] = al->types[k];
+				list->types[idx] = al->types[k];
+				zend_type_copy_ctor(&list->types[idx], /* use_arena */ true, /* persistent */ false);
+				idx++;
 			}
 		} else {
-			list->types[idx++] = a;
+			list->types[idx] = a;
+			zend_type_copy_ctor(&list->types[idx], /* use_arena */ true, /* persistent */ false);
+			idx++;
 		}
 
 		if (ZEND_TYPE_HAS_LIST(b) && (ZEND_TYPE_FULL_MASK(b) & _ZEND_TYPE_INTERSECTION_BIT)) {
 			const zend_type_list *bl = ZEND_TYPE_LIST(b);
 			for (uint32_t k = 0; k < bl->num_types; k++) {
-				list->types[idx++] = bl->types[k];
+				list->types[idx] = bl->types[k];
+				zend_type_copy_ctor(&list->types[idx], /* use_arena */ true, /* persistent */ false);
+				idx++;
 			}
 		} else {
-			list->types[idx++] = b;
+			list->types[idx] = b;
+			zend_type_copy_ctor(&list->types[idx], /* use_arena */ true, /* persistent */ false);
+			idx++;
 		}
 
 		list->num_types = idx;
@@ -1816,6 +1821,7 @@ static zend_type zend_synth_variance_merged_type(zend_type a, zend_type b, bool 
 	if (total == 1) {
 		const zend_type *only = a_complex_count ? a_complex_arr : b_complex_arr;
 		result = *only;
+		zend_type_copy_ctor(&result, /* use_arena */ true, /* persistent */ false);
 		ZEND_TYPE_FULL_MASK(result) |= mask;
 		return result;
 	}
@@ -1824,11 +1830,15 @@ static zend_type zend_synth_variance_merged_type(zend_type a, zend_type b, bool 
 	list->num_types = total;
 	uint32_t idx = 0;
 	for (uint32_t k = 0; k < a_complex_count; k++) {
-		list->types[idx++] = a_complex_arr[k];
+		list->types[idx] = a_complex_arr[k];
+		zend_type_copy_ctor(&list->types[idx], /* use_arena */ true, /* persistent */ false);
+		idx++;
 	}
 
 	for (uint32_t k = 0; k < b_complex_count; k++) {
-		list->types[idx++] = b_complex_arr[k];
+		list->types[idx] = b_complex_arr[k];
+		zend_type_copy_ctor(&list->types[idx], /* use_arena */ true, /* persistent */ false);
+		idx++;
 	}
 
 	ZEND_TYPE_SET_PTR(result, list);
@@ -2418,6 +2428,7 @@ static void do_inherit_property(zend_property_info *parent_info, zend_string *ke
 						*clone = *parent_info;
 						clone->flags |= ZEND_ACC_GENERIC_CLONE;
 						clone->type = sub;
+						zend_type_copy_ctor(&clone->type, /* use_arena */ true, /* persistent */ false);
 
 						if (hooks && (hooks[ZEND_PROPERTY_HOOK_GET] || hooks[ZEND_PROPERTY_HOOK_SET])) {
 							zend_function **clone_hooks = zend_arena_alloc(
@@ -2436,6 +2447,7 @@ static void do_inherit_property(zend_property_info *parent_info, zend_string *ke
 
 								uint32_t slot = (hi == ZEND_PROPERTY_HOOK_GET) ? 0 : 1;
 								new_arg_info[slot].type = sub;
+								zend_type_copy_ctor(&new_arg_info[slot].type, /* use_arena */ true, /* persistent */ false);
 
 								zend_function *clone_fn = zend_arena_alloc(&CG(arena), sizeof(zend_op_array));
 								memcpy(clone_fn, orig, sizeof(zend_op_array));
@@ -3359,6 +3371,16 @@ static zend_arg_info *zend_clone_arg_info_block(const zend_arg_info *orig_block,
 {
 	zend_arg_info *new_block = zend_arena_alloc(&CG(arena), sizeof(zend_arg_info) * total);
 	memcpy(new_block, orig_block, sizeof(zend_arg_info) * total);
+	for (uint32_t i = 0; i < total; i++) {
+		if (new_block[i].name) {
+			zend_string_addref(new_block[i].name);
+		}
+
+		if (new_block[i].doc_comment) {
+			zend_string_addref(new_block[i].doc_comment);
+		}
+	}
+
 	return new_block;
 }
 
@@ -3394,6 +3416,7 @@ static void zend_substitute_trait_method_arg_info(
 			*orig_op->generic_types->return_type, bind_args, bind_arity);
 		if (!ZEND_TYPE_HAS_TYPE_PARAMETER(sub)) {
 			new_block[0].type = sub;
+			zend_type_copy_ctor(&new_block[0].type, /* use_arena */ true, /* persistent */ false);
 		}
 	}
 
@@ -3406,6 +3429,7 @@ static void zend_substitute_trait_method_arg_info(
 			zend_type sub = zend_substitute_leaf_type_param(*pre_erasure, bind_args, bind_arity);
 			if (ZEND_TYPE_HAS_TYPE_PARAMETER(sub)) continue;
 			new_block[return_slot_offset + idx].type = sub;
+			zend_type_copy_ctor(&new_block[return_slot_offset + idx].type, /* use_arena */ true, /* persistent */ false);
 		} ZEND_HASH_FOREACH_END();
 	}
 
