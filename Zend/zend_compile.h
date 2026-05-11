@@ -121,8 +121,10 @@ typedef struct _zend_file_context {
 	HashTable seen_symbols;
 } zend_file_context;
 
-/* Maximum number of generic type parameters or arguments at any single position. */
-#define ZEND_GENERIC_MAX_PARAMS 255
+/* Maximum number of generic type parameters or arguments at any single
+ * position. Capped at 7 bits so a uint8_t count leaves its top bit
+ * available for future runtime-model flags. */
+#define ZEND_GENERIC_MAX_PARAMS 127
 
 C23_ENUM(zend_generic_variance, uint8_t) {
 	ZEND_GENERIC_VARIANCE_INVARIANT     = 0,
