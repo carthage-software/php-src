@@ -1689,6 +1689,44 @@ static zend_function *zend_maybe_substitute_inherited_method(
 	return clone;
 }
 
+/* True iff `t` can be a component of an intersection: a class-name leaf,
+ * or an already-built intersection of class-name leaves. */
+static bool zend_type_intersectable(zend_type t)
+{
+	if (ZEND_TYPE_HAS_NAME(t)) {
+		return ZEND_TYPE_PURE_MASK(t) == 0 || (ZEND_TYPE_PURE_MASK(t) & ~MAY_BE_NULL) == 0;
+	}
+
+	if (ZEND_TYPE_HAS_LIST(t) && (ZEND_TYPE_FULL_MASK(t) & _ZEND_TYPE_INTERSECTION_BIT)) {
+		return true;
+	}
+
+	return false;
+}
+
+static ZEND_COLD ZEND_NORETURN void zend_diamond_uninhabited_intersection_error(
+		const zend_class_entry *ce,
+		const zend_class_entry *defining_ce,
+		const zend_function *fn,
+		bool is_return_slot,
+		uint32_t param_slot_idx,
+		zend_type a, zend_type b)
+{
+	zend_string *a_str = zend_type_to_string_resolved(a, (zend_class_entry *) defining_ce);
+	zend_string *b_str = zend_type_to_string_resolved(b, (zend_class_entry *) defining_ce);
+	if (is_return_slot) {
+		zend_error_noreturn(E_COMPILE_ERROR,
+			"Diamond inheritance of %s::%s() in %s would require return type %s&%s, which is uninhabited; constrain the type parameter with an object bound",
+			ZSTR_VAL(defining_ce->name), ZSTR_VAL(fn->common.function_name),
+			ZSTR_VAL(ce->name), ZSTR_VAL(a_str), ZSTR_VAL(b_str));
+	} else {
+		zend_error_noreturn(E_COMPILE_ERROR,
+			"Diamond inheritance of %s::%s() in %s would require parameter #%u type %s&%s, which is uninhabited; constrain the type parameter with an object bound",
+			ZSTR_VAL(defining_ce->name), ZSTR_VAL(fn->common.function_name),
+			ZSTR_VAL(ce->name), param_slot_idx + 1, ZSTR_VAL(a_str), ZSTR_VAL(b_str));
+	}
+}
+
 /* Element types in the result list are borrowed from the operands; the outer
  * list is freshly arena-allocated. Callers must keep the operands alive for
  * the result's lifetime. */
@@ -1945,6 +1983,13 @@ static zend_function *zend_iface_build_merged_clone(
 				e_block[0].type, i_block[0].type,
 				hint_args, hint_arity, /* is_return_slot */ true,
 				&b, &intersect)) {
+			if (intersect && (!zend_type_intersectable(new_block[0].type) || !zend_type_intersectable(b))) {
+				zend_diamond_uninhabited_intersection_error(
+					ce, defining_ce, existing,
+					/* is_return_slot */ true, 0,
+					new_block[0].type, b);
+			}
+
 			new_block[0].type = zend_synth_variance_merged_type(new_block[0].type, b, intersect);
 		}
 	}
@@ -1965,6 +2010,13 @@ static zend_function *zend_iface_build_merged_clone(
 			}
 
 			uint32_t slot = return_slot_offset + idx;
+			if (intersect && (!zend_type_intersectable(new_block[slot].type) || !zend_type_intersectable(b))) {
+				zend_diamond_uninhabited_intersection_error(
+					ce, defining_ce, existing,
+					/* is_return_slot */ false, (uint32_t) idx,
+					new_block[slot].type, b);
+			}
+
 			new_block[slot].type = zend_synth_variance_merged_type(new_block[slot].type, b, intersect);
 		} ZEND_HASH_FOREACH_END();
 
@@ -3457,6 +3509,13 @@ static void zend_trait_diamond_merge_method(
 		if (zend_generic_merge_polarity(defining_ce, pre, /* is_return_slot */ true, &intersect)) {
 			zend_type sub = zend_substitute_leaf_type_param(*pre, binding->args, binding->count);
 			if (!ZEND_TYPE_HAS_TYPE_PARAMETER(sub) && !zend_diamond_types_equal(new_block[0].type, sub)) {
+				if (intersect && (!zend_type_intersectable(new_block[0].type) || !zend_type_intersectable(sub))) {
+					zend_diamond_uninhabited_intersection_error(
+						ce, defining_ce, existing,
+						/* is_return_slot */ true, 0,
+						new_block[0].type, sub);
+				}
+
 				new_block[0].type = zend_synth_variance_merged_type(new_block[0].type, sub, intersect);
 			}
 		}
@@ -3484,6 +3543,13 @@ static void zend_trait_diamond_merge_method(
 			uint32_t slot = return_slot_offset + idx;
 			if (zend_diamond_types_equal(new_block[slot].type, sub)) {
 				continue;
+			}
+
+			if (intersect && (!zend_type_intersectable(new_block[slot].type) || !zend_type_intersectable(sub))) {
+				zend_diamond_uninhabited_intersection_error(
+					ce, defining_ce, existing,
+					/* is_return_slot */ false, (uint32_t) idx,
+					new_block[slot].type, sub);
 			}
 
 			new_block[slot].type = zend_synth_variance_merged_type(new_block[slot].type, sub, intersect);
