@@ -8490,8 +8490,10 @@ static zend_type zend_compile_typename_ex(
 				zend_string *standard_type_str = zend_type_to_string(single_type);
 				if (t_param) {
 					zend_error_noreturn(E_COMPILE_ERROR,
-						"Type parameter %s with bound %s cannot be part of an intersection type",
-						ZSTR_VAL(t_param->name), ZSTR_VAL(standard_type_str));
+						"Type parameter %s with bound %s cannot be part of an intersection type; "
+						"use an object-shaped bound (e.g. %s: object)",
+						ZSTR_VAL(t_param->name), ZSTR_VAL(standard_type_str),
+						ZSTR_VAL(t_param->name));
 				}
 				zend_error_noreturn(E_COMPILE_ERROR,
 					"Type %s cannot be part of an intersection type", ZSTR_VAL(standard_type_str));
@@ -8501,8 +8503,10 @@ static zend_type zend_compile_typename_ex(
 				zend_string *standard_type_str = zend_type_to_string(single_type);
 				if (t_param) {
 					zend_error_noreturn(E_COMPILE_ERROR,
-						"Type parameter %s with bound %s cannot be part of an intersection type",
-						ZSTR_VAL(t_param->name), ZSTR_VAL(standard_type_str));
+						"Type parameter %s with bound %s cannot be part of an intersection type; "
+						"use an object-shaped bound (e.g. %s: object)",
+						ZSTR_VAL(t_param->name), ZSTR_VAL(standard_type_str),
+						ZSTR_VAL(t_param->name));
 				}
 				zend_error_noreturn(E_COMPILE_ERROR,
 					"Type %s cannot be part of an intersection type", ZSTR_VAL(standard_type_str));
