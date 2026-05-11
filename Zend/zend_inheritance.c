@@ -4933,13 +4933,14 @@ static void zend_variance_walk(
 			}
 		}
 
+		if (!target || !target->generic_parameters) {
+			return;
+		}
+
 		for (uint32_t i = 0; i < named->count; i++) {
-			zend_variance_polarity slot;
-			if (target && target->generic_parameters && i < target->generic_parameters->count) {
-				slot = zend_variance_polarity_from(target->generic_parameters->parameters[i].variance);
-			} else {
-				slot = ZEND_VAR_POL_INVARIANT;
-			}
+			zend_variance_polarity slot = i < target->generic_parameters->count
+				? zend_variance_polarity_from(target->generic_parameters->parameters[i].variance)
+				: ZEND_VAR_POL_INVARIANT;
 
 			zend_variance_walk(class_params, func_params, named->args[i], zend_variance_compose(pol, slot));
 		}
@@ -5590,6 +5591,11 @@ ZEND_API zend_class_entry *zend_do_link_class(zend_class_entry *ce, zend_string 
 	}
 
 	zend_validate_generic_inheritance_arities(ce, parent, traits_and_interfaces);
+
+	zend_class_entry *orig_active = CG(active_class_entry);
+	CG(active_class_entry) = ce;
+	zend_check_generic_variance_markers(ce);
+	CG(active_class_entry) = orig_active;
 
 #ifndef ZEND_WIN32
 	if (ce->ce_flags & ZEND_ACC_ENUM) {
