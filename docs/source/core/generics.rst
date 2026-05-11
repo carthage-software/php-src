@@ -209,9 +209,11 @@ gate, so detection sees the bindings directly. For each direct binding source of
 each ``implements`` entry), the check composes the ce-to-source binding with
 ``zend_get_inheritance_binding_full`` for every generic target reachable from source. Records are
 stored in a transient ``HashTable`` keyed by target ``zend_class_entry *``;
-``zend_diamond_record_or_check`` compares through ``zend_diamond_types_equal`` (NAMED_WITH_ARGS,
-lists, names CI, ``T``-refs by origin and index). On a conflict, ``zend_error_noreturn`` fires
-with both source paths.
+``zend_diamond_record_or_check`` compares only arity. Differing arity is structurally
+inconsistent and fires ``zend_error_noreturn`` with both source paths. Differing args at matching
+arity are admitted at this stage and resolved downstream - the interface-level merge synthesises
+a use-site-variance-aware contract on the inheriting interface, and per-path LSP verifies any
+concrete implementer against each substituted parent prototype.
 
 ``zend_check_generic_link_bounds`` validates each supplied arg against the corresponding target
 parameter's bound. When the supplied arg is a leaf class-scope ``T``-ref of ce, the effective arg
