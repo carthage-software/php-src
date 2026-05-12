@@ -3414,11 +3414,13 @@ static void zend_substitute_trait_method_arg_info(
 	uint32_t return_slot_offset = has_return ? 1 : 0;
 
 	if (has_return && orig_op->generic_types->return_type) {
-		zend_type sub = zend_substitute_leaf_type_param(
-			*orig_op->generic_types->return_type, bind_args, bind_arity);
-		if (!ZEND_TYPE_HAS_TYPE_PARAMETER(sub)) {
-			new_block[0].type = sub;
-			zend_type_copy_ctor(&new_block[0].type, /* use_arena */ true, /* persistent */ false);
+		const zend_type *pre = orig_op->generic_types->return_type;
+		if (ZEND_TYPE_HAS_TYPE_PARAMETER(*pre)) {
+			zend_type sub = zend_substitute_leaf_type_param(*pre, bind_args, bind_arity);
+			if (!ZEND_TYPE_HAS_TYPE_PARAMETER(sub)) {
+				new_block[0].type = sub;
+				zend_type_copy_ctor(&new_block[0].type, /* use_arena */ true, /* persistent */ false);
+			}
 		}
 	}
 
@@ -3426,10 +3428,20 @@ static void zend_substitute_trait_method_arg_info(
 		zval *zv;
 		zend_ulong idx;
 		ZEND_HASH_FOREACH_NUM_KEY_VAL(orig_op->generic_types->parameters, idx, zv) {
-			if (idx >= num_args) continue;
+			if (idx >= num_args) {
+				continue;
+			}
+
 			zend_type *pre_erasure = (zend_type *) Z_PTR_P(zv);
+			if (!ZEND_TYPE_HAS_TYPE_PARAMETER(*pre_erasure)) {
+				continue;
+			}
+
 			zend_type sub = zend_substitute_leaf_type_param(*pre_erasure, bind_args, bind_arity);
-			if (ZEND_TYPE_HAS_TYPE_PARAMETER(sub)) continue;
+			if (ZEND_TYPE_HAS_TYPE_PARAMETER(sub)) {
+				continue;
+			}
+
 			new_block[return_slot_offset + idx].type = sub;
 			zend_type_copy_ctor(&new_block[return_slot_offset + idx].type, /* use_arena */ true, /* persistent */ false);
 		} ZEND_HASH_FOREACH_END();
