@@ -3381,6 +3381,8 @@ static zend_arg_info *zend_clone_arg_info_block(const zend_arg_info *orig_block,
 		if (new_block[i].doc_comment) {
 			zend_string_addref(new_block[i].doc_comment);
 		}
+
+		zend_type_copy_ctor(&new_block[i].type, /* use_arena */ true, /* persistent */ false);
 	}
 
 	return new_block;
