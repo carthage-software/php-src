@@ -902,7 +902,7 @@ static zend_class_entry *zend_find_interface_by_name(
 
 /* Walks the inheritance chain and composes substitutions when ce's binding
  * for `target` is transitive. */
-static bool zend_get_inheritance_binding_full(
+ZEND_API bool zend_get_inheritance_binding_full(
 		const zend_class_entry *ce,
 		const zend_class_entry *target,
 		zend_type *out_args,

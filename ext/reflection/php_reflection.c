@@ -45,6 +45,7 @@
 #include "zend_closures.h"
 #include "zend_generators.h"
 #include "zend_extensions.h"
+#include "zend_inheritance.h"
 #include "zend_builtin_functions.h"
 #include "zend_smart_str.h"
 #include "zend_enum.h"
@@ -8703,18 +8704,53 @@ ZEND_METHOD(ReflectionNamedType, getGenericArguments)
 	}
 }
 
-static void reflection_build_named_args_list(zval *return_value, const zend_type *boxed,
-		zend_class_entry *declaring_class)
+static void reflection_build_args_list(zval *return_value, const zend_type *args,
+		uint32_t count, zend_class_entry *declaring_class)
 {
-	zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
-	array_init_size(return_value, named->count);
-	for (uint32_t i = 0; i < named->count; i++) {
+	array_init_size(return_value, count);
+	for (uint32_t i = 0; i < count; i++) {
 		zval entry;
-		reflection_type_factory_ex(named->args[i], &entry, false,
+		reflection_type_factory_ex(args[i], &entry, false,
 			(zend_type) ZEND_TYPE_INIT_NONE(0),
 			declaring_class, NULL);
 		zend_hash_next_index_insert_new(Z_ARRVAL_P(return_value), &entry);
 	}
+}
+
+static void reflection_build_named_args_list(zval *return_value, const zend_type *boxed,
+		zend_class_entry *declaring_class)
+{
+	zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
+	reflection_build_args_list(return_value, named->args, named->count, declaring_class);
+}
+
+static bool reflection_get_transitive_interface_args(
+		zend_class_entry *ce, zend_class_entry *ancestor,
+		zend_type *args, uint32_t cap, uint32_t *arity)
+{
+	if (zend_get_inheritance_binding_full(ce, ancestor, args, cap, arity)) {
+		return true;
+	}
+
+	if ((ce->ce_flags & ZEND_ACC_RESOLVED_PARENT) && ce->parent && ce->parent != ancestor) {
+		if (reflection_get_transitive_interface_args(ce->parent, ancestor, args, cap, arity)) {
+			return true;
+		}
+	}
+
+	if (ce->ce_flags & ZEND_ACC_RESOLVED_INTERFACES) {
+		for (uint32_t i = 0; i < ce->num_interfaces; i++) {
+			zend_class_entry *intermediate = ce->interfaces[i];
+			if (!intermediate || intermediate == ancestor) {
+				continue;
+			}
+			if (reflection_get_transitive_interface_args(intermediate, ancestor, args, cap, arity)) {
+				return true;
+			}
+		}
+	}
+
+	return false;
 }
 
 ZEND_METHOD(ReflectionClass, getGenericArgumentsForParentClass)
@@ -8776,10 +8812,12 @@ ZEND_METHOD(ReflectionClass, getGenericArgumentsForParentInterface)
 	}
 
 	bool is_ancestor = false;
+	zend_class_entry *ancestor = NULL;
 	if (ce->ce_flags & ZEND_ACC_LINKED) {
 		for (uint32_t i = 0; i < ce->num_interfaces; i++) {
 			if (zend_string_equals_ci(ce->interfaces[i]->name, name)) {
 				is_ancestor = true;
+				ancestor = ce->interfaces[i];
 				break;
 			}
 		}
@@ -8795,6 +8833,18 @@ ZEND_METHOD(ReflectionClass, getGenericArgumentsForParentInterface)
 		zend_throw_exception_ex(reflection_exception_ptr, 0,
 			"%s is not an ancestor interface of %s", ZSTR_VAL(name), ZSTR_VAL(ce->name));
 		RETURN_THROWS();
+	}
+	if (ancestor && ancestor->generic_parameters) {
+		uint32_t cap = ancestor->generic_parameters->count;
+		ALLOCA_FLAG(use_heap)
+		zend_type *args = (zend_type *) do_alloca(sizeof(zend_type) * cap, use_heap);
+		uint32_t arity;
+		if (reflection_get_transitive_interface_args(ce, ancestor, args, cap, &arity)) {
+			reflection_build_args_list(return_value, args, arity, ce);
+			free_alloca(args, use_heap);
+			return;
+		}
+		free_alloca(args, use_heap);
 	}
 	RETURN_EMPTY_ARRAY();
 }

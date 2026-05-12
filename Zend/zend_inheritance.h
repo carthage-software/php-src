@@ -45,6 +45,12 @@ ZEND_API void zend_do_inheritance_ex(zend_class_entry *ce, zend_class_entry *par
 ZEND_API zend_inheritance_status zend_check_generic_arg_satisfies_bound(
 		zend_class_entry *arg_scope, zend_type arg,
 		zend_class_entry *bound_scope, zend_type bound);
+ZEND_API bool zend_get_inheritance_binding_full(
+		const zend_class_entry *ce,
+		const zend_class_entry *target,
+		zend_type *out_args,
+		uint32_t out_capacity,
+		uint32_t *out_arity);
 
 static zend_always_inline void zend_do_inheritance(zend_class_entry *ce, zend_class_entry *parent_ce) {
 	zend_do_inheritance_ex(ce, parent_ce, 0);
