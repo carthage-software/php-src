@@ -3411,7 +3411,7 @@ static void zend_substitute_trait_method_arg_info(
 	}
 
 	const zend_arg_info *orig_block = has_return ? orig_op->arg_info - 1 : orig_op->arg_info;
-	zend_arg_info *new_block = zend_clone_arg_info_block(orig_block, total);
+	zend_arg_info *new_block = NULL;
 
 	uint32_t return_slot_offset = has_return ? 1 : 0;
 
@@ -3420,6 +3420,9 @@ static void zend_substitute_trait_method_arg_info(
 		if (ZEND_TYPE_HAS_TYPE_PARAMETER(*pre)) {
 			zend_type sub = zend_substitute_leaf_type_param(*pre, bind_args, bind_arity);
 			if (!ZEND_TYPE_HAS_TYPE_PARAMETER(sub)) {
+				if (!new_block) {
+					new_block = zend_clone_arg_info_block(orig_block, total);
+				}
 				new_block[0].type = sub;
 				zend_type_copy_ctor(&new_block[0].type, /* use_arena */ true, /* persistent */ false);
 			}
@@ -3444,12 +3447,17 @@ static void zend_substitute_trait_method_arg_info(
 				continue;
 			}
 
+			if (!new_block) {
+				new_block = zend_clone_arg_info_block(orig_block, total);
+			}
 			new_block[return_slot_offset + idx].type = sub;
 			zend_type_copy_ctor(&new_block[return_slot_offset + idx].type, /* use_arena */ true, /* persistent */ false);
 		} ZEND_HASH_FOREACH_END();
 	}
 
-	new_fn->op_array.arg_info = has_return ? new_block + 1 : new_block;
+	if (new_block) {
+		new_fn->op_array.arg_info = has_return ? new_block + 1 : new_block;
+	}
 }
 
 static const zend_type_named_with_args *zend_get_trait_use_binding_by_index(
