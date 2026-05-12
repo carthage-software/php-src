@@ -137,7 +137,9 @@ static void zend_try_inline_call(zend_op_array *op_array, const zend_op *fcall, 
 				return;
 			}
 
-			if (zend_call_has_generic_arguments_check(opline - 1)) {
+			if (op_array->generic_types
+					&& op_array->generic_types->turbofish_args
+					&& zend_call_has_generic_arguments_check(opline - 1)) {
 				/* The verify opcode must run; inlining would orphan it. */
 				return;
 			}
