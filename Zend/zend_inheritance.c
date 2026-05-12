@@ -5047,6 +5047,7 @@ void zend_check_generic_variance_markers(zend_class_entry *ce)
 	}
 
 	const zend_generic_parameter_list *class_params = ce->generic_parameters;
+	uint32_t orig_lineno = CG(zend_lineno);
 
 	for (uint32_t i = 0; i < class_params->count; i++) {
 		const zend_generic_parameter *p = &class_params->parameters[i];
@@ -5073,8 +5074,10 @@ void zend_check_generic_variance_markers(zend_class_entry *ce)
 			continue;
 		}
 
+		CG(zend_lineno) = fn->op_array.line_start;
 		zend_variance_walk_function(class_params, NULL, &fn->op_array);
 	} ZEND_HASH_FOREACH_END();
+	CG(zend_lineno) = orig_lineno;
 
 	if (ce->generic_types && ce->generic_types->properties) {
 		zend_property_info *prop_info;
@@ -5094,9 +5097,12 @@ void zend_check_generic_variance_markers(zend_class_entry *ce)
 				for (uint32_t i = 0; i < ZEND_PROPERTY_HOOK_COUNT; i++) {
 					zend_function *hook = prop_info->hooks[i];
 					if (hook && ZEND_USER_CODE(hook->common.type)) {
+						CG(zend_lineno) = hook->op_array.line_start;
 						zend_variance_walk_function(class_params, NULL, &hook->op_array);
 					}
 				}
+
+				CG(zend_lineno) = orig_lineno;
 			}
 		} ZEND_HASH_FOREACH_END();
 	}
