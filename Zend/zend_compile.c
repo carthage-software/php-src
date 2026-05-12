@@ -535,6 +535,7 @@ static int zend_generic_lookup_forward(const zend_string *name) /* {{{ */
 
 static bool zend_type_ast_has_generic_content(zend_ast *ast);
 static zend_type zend_compile_pre_erasure_typename(zend_ast *ast);
+static zend_string *zend_resolve_class_name(zend_string *name, uint32_t type);
 
 static zend_generic_parameter *zend_generic_lookup(zend_string *name) /* {{{ */
 {
@@ -961,7 +962,13 @@ static zend_type zend_compile_pre_erasure_typename(zend_ast *ast)
 			payload->name = zend_string_init_interned(ZEND_STRL("static"), 0);
 			payload->name_attr = 0;
 		} else {
-			payload->name = zend_string_copy(zval_make_interned_string(zend_ast_get_zval(name_ast)));
+			zend_string *raw = zval_make_interned_string(zend_ast_get_zval(name_ast));
+			if (zend_get_class_fetch_type(raw) != ZEND_FETCH_CLASS_DEFAULT) {
+				payload->name = zend_string_copy(raw);
+			} else {
+				payload->name = zend_resolve_class_name(raw, name_ast->attr);
+			}
+
 			payload->name_attr = name_ast->attr;
 		}
 
