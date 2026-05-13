@@ -1,5 +1,5 @@
 /* This is a generated file, edit php_reflection.stub.php instead.
- * Stub hash: 3285061ba15d3312182782cace0c79f42915c7d6
+ * Stub hash: 12092cbfe98615b205c146ece58ed58f3b92b100
  * Has decl header: yes */
 
 ZEND_BEGIN_ARG_WITH_TENTATIVE_RETURN_TYPE_INFO_EX(arginfo_class_Reflection_getModifierNames, 0, 1, IS_ARRAY, 0)
@@ -1937,19 +1937,13 @@ static zend_class_entry *register_class_ReflectionTypeParameterReference(zend_cl
 
 static zend_class_entry *register_class_ReflectionGenericVariance(void)
 {
-	zend_class_entry *class_entry = zend_register_internal_enum("ReflectionGenericVariance", IS_LONG, NULL);
+	zend_class_entry *class_entry = zend_register_internal_enum("ReflectionGenericVariance", IS_UNDEF, NULL);
 
-	zval enum_case_Invariant_value;
-	ZVAL_LONG(&enum_case_Invariant_value, 0);
-	zend_enum_add_case_cstr(class_entry, "Invariant", &enum_case_Invariant_value);
+	zend_enum_add_case_cstr(class_entry, "Invariant", NULL);
 
-	zval enum_case_Covariant_value;
-	ZVAL_LONG(&enum_case_Covariant_value, 1);
-	zend_enum_add_case_cstr(class_entry, "Covariant", &enum_case_Covariant_value);
+	zend_enum_add_case_cstr(class_entry, "Covariant", NULL);
 
-	zval enum_case_Contravariant_value;
-	ZVAL_LONG(&enum_case_Contravariant_value, 2);
-	zend_enum_add_case_cstr(class_entry, "Contravariant", &enum_case_Contravariant_value);
+	zend_enum_add_case_cstr(class_entry, "Contravariant", NULL);
 
 	return class_entry;
 }

@@ -817,11 +817,11 @@ final class ReflectionTypeParameterReference extends ReflectionType
     public function __toString(): string {}
 }
 
-enum ReflectionGenericVariance: int
+enum ReflectionGenericVariance
 {
-    case Invariant     = 0;
-    case Covariant     = 1;
-    case Contravariant = 2;
+    case Invariant;
+    case Covariant;
+    case Contravariant;
 }
 
 /**

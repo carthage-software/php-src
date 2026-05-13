@@ -1,12 +1,18 @@
 --TEST--
-Reflection: ReflectionGenericVariance enum cases
+Reflection: ReflectionGenericVariance is a unit enum exposing three cases
 --FILE--
 <?php
-echo ReflectionGenericVariance::Invariant->value, "\n";
-echo ReflectionGenericVariance::Covariant->value, "\n";
-echo ReflectionGenericVariance::Contravariant->value, "\n";
+echo ReflectionGenericVariance::Invariant->name, "\n";
+echo ReflectionGenericVariance::Covariant->name, "\n";
+echo ReflectionGenericVariance::Contravariant->name, "\n";
+var_dump(ReflectionGenericVariance::Invariant instanceof BackedEnum);
+var_dump(ReflectionGenericVariance::Invariant === ReflectionGenericVariance::Invariant);
+var_dump(ReflectionGenericVariance::Invariant === ReflectionGenericVariance::Covariant);
 ?>
 --EXPECT--
-0
-1
-2
+Invariant
+Covariant
+Contravariant
+bool(false)
+bool(true)
+bool(false)
