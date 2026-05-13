@@ -4,9 +4,9 @@ Generic syntax: type parameter without variance is invariant
 <?php
 class Box<T> {}
 $p = (new ReflectionClass('Box'))->getGenericParameters()[0];
+var_dump($p->getVariance() === ReflectionGenericVariance::Invariant);
 echo $p->getVariance()->name, "\n";
-echo $p->getVariance()->value, "\n";
 ?>
 --EXPECT--
+bool(true)
 Invariant
-0
