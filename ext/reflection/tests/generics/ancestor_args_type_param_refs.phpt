@@ -6,18 +6,20 @@ interface Container<X> {}
 class Holder<T : object> implements Container<T> {}
 
 $rc = new ReflectionClass('Holder');
-$args = $rc->getGenericArgumentsForParentInterface('Container');
+$bindings = $rc->getGenericArgumentsForParentInterface('Container');
 
-echo "count: ", count($args), "\n";
-echo "class: ", get_class($args[0]), "\n";
-echo "name: ", $args[0]->getName(), "\n";
+echo "bindings: ", count($bindings), "\n";
+echo "args in binding 0: ", count($bindings[0]), "\n";
+echo "class: ", get_class($bindings[0][0]), "\n";
+echo "name: ", $bindings[0][0]->getName(), "\n";
 
-$param = $args[0]->getTypeParameter();
+$param = $bindings[0][0]->getTypeParameter();
 echo "type param: ", $param->getName(), "\n";
 echo "declaring: ", $param->getDeclaringEntity()->getName(), "\n";
 ?>
 --EXPECT--
-count: 1
+bindings: 1
+args in binding 0: 1
 class: ReflectionTypeParameterReference
 name: T
 type param: T

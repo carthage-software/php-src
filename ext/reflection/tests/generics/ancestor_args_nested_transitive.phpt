@@ -13,17 +13,19 @@ class Forwarded<U> implements Mid<U> {}
 class Reordered<X, Y> implements Flip<X, Y> {}
 
 function show(string $class, string $interface): void {
-    $args = (new ReflectionClass($class))->getGenericArgumentsForParentInterface($interface);
-    echo "$class/$interface\n";
-    foreach ($args as $arg) {
-        echo "  ", $arg->getName();
-        if ($arg instanceof ReflectionNamedType && $arg->hasGenericArguments()) {
-            echo "<", implode(", ", array_map(
-                static fn(ReflectionType $type): string => $type->getName(),
-                $arg->getGenericArguments(),
-            )), ">";
+    $bindings = (new ReflectionClass($class))->getGenericArgumentsForParentInterface($interface);
+    echo "$class/$interface (", count($bindings), " binding)\n";
+    foreach ($bindings as $args) {
+        foreach ($args as $arg) {
+            echo "  ", $arg->getName();
+            if ($arg instanceof ReflectionNamedType && $arg->hasGenericArguments()) {
+                echo "<", implode(", ", array_map(
+                    static fn(ReflectionType $type): string => $type->getName(),
+                    $arg->getGenericArguments(),
+                )), ">";
+            }
+            echo "\n";
         }
-        echo "\n";
     }
 }
 
@@ -31,17 +33,17 @@ show(Concrete::class, Root::class);
 show(Forwarded::class, Root::class);
 show(Reordered::class, PairRoot::class);
 
-$forwardedArgs = (new ReflectionClass(Forwarded::class))->getGenericArgumentsForParentInterface(Root::class);
-$forwardedInner = $forwardedArgs[0]->getGenericArguments()[0];
+$forwardedBindings = (new ReflectionClass(Forwarded::class))->getGenericArgumentsForParentInterface(Root::class);
+$forwardedInner = $forwardedBindings[0][0]->getGenericArguments()[0];
 echo "Forwarded nested parameter owner: ",
     $forwardedInner->getTypeParameter()->getDeclaringEntity()->getName(), "\n";
 ?>
 --EXPECT--
-Concrete/Root
+Concrete/Root (1 binding)
   Box<int>
-Forwarded/Root
+Forwarded/Root (1 binding)
   Box<U>
-Reordered/PairRoot
+Reordered/PairRoot (1 binding)
   Box<Y>
   Box<X>
 Forwarded nested parameter owner: Forwarded

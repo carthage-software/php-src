@@ -1,5 +1,5 @@
 --TEST--
-Reflection: getGenericArgumentsForParentInterface composes substitutions through transitive paths and returns first-match for diamonds
+Reflection: getGenericArgumentsForParentInterface composes substitutions through transitive paths and exposes every diamond binding
 --FILE--
 <?php
 
@@ -31,10 +31,19 @@ interface I1 extends DA<int> {}
 interface I2 extends DA<string> {}
 class Diamond implements I1, I2 {}
 
+function render(array $bindings): string {
+    return '[' . implode(', ', array_map(
+        static fn(array $b): string => '[' . implode(', ', array_map(
+            static fn(ReflectionType $t): string => (string) $t,
+            $b,
+        )) . ']',
+        $bindings,
+    )) . ']';
+}
+
 function show(string $cls, string $ancestor): void {
-    $args = (new ReflectionClass($cls))->getGenericArgumentsForParentInterface($ancestor);
-    $rendered = array_map(static fn(ReflectionType $t): string => (string) $t, $args);
-    printf("%-30s -> %-10s = [%s]\n", $cls, $ancestor, implode(', ', $rendered));
+    $bindings = (new ReflectionClass($cls))->getGenericArgumentsForParentInterface($ancestor);
+    printf("%-30s -> %-10s = %s\n", $cls, $ancestor, render($bindings));
 }
 
 show('FwdGeneric', 'Root');
@@ -53,16 +62,16 @@ show('Diamond', 'DA');
 
 ?>
 --EXPECT--
-FwdGeneric                     -> Root       = [U]
-FwdGeneric                     -> Mid        = [U]
-ConcreteThroughGeneric         -> Root       = [int]
-DeepFwd                        -> DeepRoot   = [U]
-DeepFwd                        -> DeepMid    = [U]
-DeepFwd                        -> DeepLeaf   = [U]
-ChildOfBound                   -> Root       = [int]
-GrandchildOfBound              -> Root       = [int]
-ForwardingChild                -> Root       = [V]
-ChildViaMid                    -> Root       = [string]
-ChildViaMid                    -> Mid        = [string]
-Leaf                           -> Root       = [bool]
-Diamond                        -> DA         = [int]
+FwdGeneric                     -> Root       = [[U]]
+FwdGeneric                     -> Mid        = [[U]]
+ConcreteThroughGeneric         -> Root       = [[int]]
+DeepFwd                        -> DeepRoot   = [[U]]
+DeepFwd                        -> DeepMid    = [[U]]
+DeepFwd                        -> DeepLeaf   = [[U]]
+ChildOfBound                   -> Root       = [[int]]
+GrandchildOfBound              -> Root       = [[int]]
+ForwardingChild                -> Root       = [[V]]
+ChildViaMid                    -> Root       = [[string]]
+ChildViaMid                    -> Mid        = [[string]]
+Leaf                           -> Root       = [[bool]]
+Diamond                        -> DA         = [[int], [string]]

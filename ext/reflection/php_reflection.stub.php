@@ -458,11 +458,16 @@ class ReflectionClass implements Reflector
     public function getGenericArgumentsForParentClass(): array {}
 
     /**
-     * Returns the type arguments this class supplies for the named ancestor
-     * interface, in source order. Returns an empty array if no type arguments
-     * were specified at the use site.
+     * Returns every generic argument set this class supplies for the named
+     * ancestor interface, in inheritance traversal order. The outer list
+     * contains one entry per binding: a class may bind the same generic
+     * interface multiple times either directly (`implements Foo<int>,
+     * Foo<string>`) or transitively through different inheritance paths.
+     * Each inner list holds the type arguments for that binding in source
+     * order. Returns an empty outer list when no generic bindings to the
+     * ancestor exist.
      *
-     * @return list<ReflectionType>
+     * @return list<list<ReflectionType>>
      * @throws ReflectionException if $name is not an ancestor interface
      */
     public function getGenericArgumentsForParentInterface(string $name): array {}
