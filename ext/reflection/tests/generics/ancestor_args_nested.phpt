@@ -23,7 +23,7 @@ echo "<", $args[0]->getGenericArguments()[0]->getName(), ">\n";
 echo "parent[1]: ", $args[1]->getName(), "\n";
 
 // Nested in implements
-$args = $rc->getGenericArgumentsForParentInterface('I');
+$args = $rc->getGenericArgumentSetsForParentInterface('I')[0];
 echo "I[0]: ", $args[0]->getName();
 echo "<", $args[0]->getGenericArguments()[0]->getName(), ">\n";
 

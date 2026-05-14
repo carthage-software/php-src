@@ -6,7 +6,7 @@ interface Container<X> {}
 class Holder<T : object> implements Container<T> {}
 
 $rc = new ReflectionClass('Holder');
-$args = $rc->getGenericArgumentsForParentInterface('Container');
+$args = $rc->getGenericArgumentSetsForParentInterface('Container')[0];
 
 echo "count: ", count($args), "\n";
 echo "class: ", get_class($args[0]), "\n";

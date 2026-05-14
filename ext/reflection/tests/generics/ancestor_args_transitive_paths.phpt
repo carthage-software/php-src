@@ -1,5 +1,5 @@
 --TEST--
-Reflection: getGenericArgumentsForParentInterface composes substitutions through transitive paths and returns first-match for diamonds
+Reflection: getGenericArgumentSetsForParentInterface composes substitutions through transitive paths
 --FILE--
 <?php
 
@@ -32,9 +32,15 @@ interface I2 extends DA<string> {}
 class Diamond implements I1, I2 {}
 
 function show(string $cls, string $ancestor): void {
-    $args = (new ReflectionClass($cls))->getGenericArgumentsForParentInterface($ancestor);
-    $rendered = array_map(static fn(ReflectionType $t): string => (string) $t, $args);
-    printf("%-30s -> %-10s = [%s]\n", $cls, $ancestor, implode(', ', $rendered));
+    $sets = (new ReflectionClass($cls))->getGenericArgumentSetsForParentInterface($ancestor);
+    $rendered = array_map(
+        static fn(array $args): string => '[' . implode(', ', array_map(
+            static fn(ReflectionType $t): string => (string) $t,
+            $args,
+        )) . ']',
+        $sets,
+    );
+    printf("%-30s -> %-10s = %s\n", $cls, $ancestor, implode('; ', $rendered));
 }
 
 show('FwdGeneric', 'Root');
@@ -65,4 +71,4 @@ ForwardingChild                -> Root       = [V]
 ChildViaMid                    -> Root       = [string]
 ChildViaMid                    -> Mid        = [string]
 Leaf                           -> Root       = [bool]
-Diamond                        -> DA         = [int]
+Diamond                        -> DA         = [int]; [string]

@@ -8962,6 +8962,39 @@ static bool reflection_get_direct_inheritance_binding(
 	return false;
 }
 
+static bool reflection_interface_is_reached_through_generic_binding(
+		zend_class_entry *ce, zend_class_entry *iface, HashTable *generic_implements)
+{
+	if (!generic_implements) {
+		return false;
+	}
+
+	zval *zv;
+	ZEND_HASH_FOREACH_VAL(generic_implements, zv) {
+		zend_type *boxed = (zend_type *) Z_PTR_P(zv);
+		if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) {
+			continue;
+		}
+
+		zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
+		zend_class_entry *bound = named->name
+			? reflection_find_interface_by_name(ce, named->name) : NULL;
+		if (!bound) {
+			continue;
+		}
+		if (bound == iface) {
+			return true;
+		}
+		for (uint32_t i = 0; i < bound->num_interfaces; i++) {
+			if (bound->interfaces[i] == iface) {
+				return true;
+			}
+		}
+	} ZEND_HASH_FOREACH_END();
+
+	return false;
+}
+
 static bool reflection_collect_interface_arg_sets(
 		zval *return_value, zend_class_entry *ce, zend_class_entry *ancestor,
 		const zend_type *ce_args, uint32_t ce_arity,
@@ -9049,8 +9082,7 @@ static bool reflection_collect_interface_arg_sets(
 			if (!intermediate || intermediate == ancestor) {
 				continue;
 			}
-			if (generic_implements
-					&& zend_hash_index_exists(generic_implements, i - parent_interface_count)) {
+			if (reflection_interface_is_reached_through_generic_binding(ce, intermediate, generic_implements)) {
 				continue;
 			}
 			if (reflection_collect_interface_arg_sets(return_value, intermediate, ancestor,
@@ -9061,96 +9093,6 @@ static bool reflection_collect_interface_arg_sets(
 	}
 
 	return found;
-}
-
-static bool reflection_get_transitive_interface_args(
-		zend_class_entry *ce, zend_class_entry *ancestor,
-		zend_type *args, uint32_t cap, uint32_t *arity)
-{
-	const zend_type *direct_args;
-	if (reflection_get_direct_inheritance_binding(ce, ancestor, &direct_args, arity)) {
-		if (*arity > cap) {
-			return false;
-		}
-		for (uint32_t i = 0; i < *arity; i++) {
-			args[i] = reflection_type_copy(direct_args[i]);
-		}
-		return true;
-	}
-
-	if ((ce->ce_flags & ZEND_ACC_RESOLVED_PARENT) && ce->parent && ce->parent != ancestor) {
-		ALLOCA_FLAG(use_heap)
-		zend_type *parent_args = (zend_type *) do_alloca(sizeof(zend_type) * cap, use_heap);
-		uint32_t parent_arity;
-		if (reflection_get_transitive_interface_args(ce->parent, ancestor, parent_args, cap, &parent_arity)) {
-			const zend_type *ce_to_parent;
-			uint32_t ce_to_parent_arity;
-			if (reflection_get_direct_inheritance_binding(ce, ce->parent, &ce_to_parent, &ce_to_parent_arity)) {
-				for (uint32_t i = 0; i < parent_arity; i++) {
-					args[i] = reflection_type_substitute_class_params(
-						parent_args[i], ce_to_parent, ce_to_parent_arity);
-				}
-				reflection_type_array_release(parent_args, parent_arity);
-			} else {
-				for (uint32_t i = 0; i < parent_arity; i++) {
-					args[i] = parent_args[i];
-				}
-			}
-			*arity = parent_arity;
-			free_alloca(parent_args, use_heap);
-			return true;
-		}
-		free_alloca(parent_args, use_heap);
-	}
-
-	if (ce->generic_types && ce->generic_types->implements) {
-		zval *zv;
-		ZEND_HASH_FOREACH_VAL(ce->generic_types->implements, zv) {
-			zend_type *boxed = (zend_type *) Z_PTR_P(zv);
-			if (!ZEND_TYPE_HAS_NAMED_WITH_ARGS(*boxed)) {
-				continue;
-			}
-
-			zend_type_named_with_args *named = ZEND_TYPE_NAMED_WITH_ARGS(*boxed);
-			zend_class_entry *intermediate = named->name
-				? reflection_find_interface_by_name(ce, named->name) : NULL;
-			if (!intermediate || intermediate == ancestor) {
-				continue;
-			}
-
-			ALLOCA_FLAG(use_heap)
-			zend_type *intermediate_args = (zend_type *) do_alloca(sizeof(zend_type) * cap, use_heap);
-			uint32_t intermediate_arity;
-			if (!reflection_get_transitive_interface_args(
-					intermediate, ancestor, intermediate_args, cap, &intermediate_arity)) {
-				free_alloca(intermediate_args, use_heap);
-				continue;
-			}
-
-			for (uint32_t i = 0; i < intermediate_arity; i++) {
-				args[i] = reflection_type_substitute_class_params(
-					intermediate_args[i], named->args, named->count);
-			}
-			reflection_type_array_release(intermediate_args, intermediate_arity);
-			*arity = intermediate_arity;
-			free_alloca(intermediate_args, use_heap);
-			return true;
-		} ZEND_HASH_FOREACH_END();
-	}
-
-	if (ce->ce_flags & ZEND_ACC_RESOLVED_INTERFACES) {
-		for (uint32_t i = 0; i < ce->num_interfaces; i++) {
-			zend_class_entry *intermediate = ce->interfaces[i];
-			if (!intermediate || intermediate == ancestor) {
-				continue;
-			}
-			if (reflection_get_transitive_interface_args(intermediate, ancestor, args, cap, arity)) {
-				return true;
-			}
-		}
-	}
-
-	return false;
 }
 
 ZEND_METHOD(ReflectionClass, getGenericArgumentsForParentClass)
@@ -9193,61 +9135,6 @@ static bool reflection_try_build_named_args_from_table(HashTable *ht, zend_class
 		}
 	} ZEND_HASH_FOREACH_END();
 	return false;
-}
-
-ZEND_METHOD(ReflectionClass, getGenericArgumentsForParentInterface)
-{
-	reflection_object *intern;
-	zend_class_entry *ce;
-	zend_string *name;
-
-	ZEND_PARSE_PARAMETERS_START(1, 1)
-		Z_PARAM_STR(name)
-	ZEND_PARSE_PARAMETERS_END();
-	GET_REFLECTION_OBJECT_PTR(ce);
-
-	HashTable *ht = ce->generic_types ? ce->generic_types->implements : NULL;
-	if (reflection_try_build_named_args_from_table(ht, ce, name, return_value)) {
-		return;
-	}
-
-	bool is_ancestor = false;
-	zend_class_entry *ancestor = NULL;
-	if (ce->ce_flags & ZEND_ACC_LINKED) {
-		for (uint32_t i = 0; i < ce->num_interfaces; i++) {
-			if (zend_string_equals_ci(ce->interfaces[i]->name, name)) {
-				is_ancestor = true;
-				ancestor = ce->interfaces[i];
-				break;
-			}
-		}
-	} else {
-		for (uint32_t i = 0; i < ce->num_interfaces; i++) {
-			if (zend_string_equals_ci(ce->interface_names[i].name, name)) {
-				is_ancestor = true;
-				break;
-			}
-		}
-	}
-	if (!is_ancestor) {
-		zend_throw_exception_ex(reflection_exception_ptr, 0,
-			"%s is not an ancestor interface of %s", ZSTR_VAL(name), ZSTR_VAL(ce->name));
-		RETURN_THROWS();
-	}
-	if (ancestor && ancestor->generic_parameters) {
-		uint32_t cap = ancestor->generic_parameters->count;
-		ALLOCA_FLAG(use_heap)
-		zend_type *args = (zend_type *) do_alloca(sizeof(zend_type) * cap, use_heap);
-		uint32_t arity;
-		if (reflection_get_transitive_interface_args(ce, ancestor, args, cap, &arity)) {
-			reflection_build_args_list_ex(return_value, args, arity, ce, true);
-			reflection_type_array_release(args, arity);
-			free_alloca(args, use_heap);
-			return;
-		}
-		free_alloca(args, use_heap);
-	}
-	RETURN_EMPTY_ARRAY();
 }
 
 ZEND_METHOD(ReflectionClass, getGenericArgumentSetsForParentInterface)

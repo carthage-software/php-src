@@ -20,7 +20,7 @@ function show(string $cls): void {
     }
 
     try {
-        $i = $rc->getGenericArgumentsForParentInterface('IPlain');
+        $i = $rc->getGenericArgumentSetsForParentInterface('IPlain');
         echo " iface=", json_encode($i);
     } catch (ReflectionException $e) {
         echo " iface=throw(", $e->getMessage(), ")";
@@ -43,5 +43,5 @@ foreach (['Plain', 'WithParent', 'WithIface', 'WithTrait'] as $cls) {
 --EXPECT--
 Plain: parent=throw(Class Plain has no parent class) iface=throw(IPlain is not an ancestor interface of Plain) trait=throw(TPlain is not a trait used by Plain)
 WithParent: parent=[] iface=throw(IPlain is not an ancestor interface of WithParent) trait=throw(TPlain is not a trait used by WithParent)
-WithIface: parent=throw(Class WithIface has no parent class) iface=[] trait=throw(TPlain is not a trait used by WithIface)
+WithIface: parent=throw(Class WithIface has no parent class) iface=[[]] trait=throw(TPlain is not a trait used by WithIface)
 WithTrait: parent=throw(Class WithTrait has no parent class) iface=throw(IPlain is not an ancestor interface of WithTrait) trait=[]

@@ -1,5 +1,5 @@
 --TEST--
-Reflection: getGenericArgumentsForParentInterface returns args from implements / interface-extends; throws when not ancestor
+Reflection: getGenericArgumentSetsForParentInterface returns args from implements / interface-extends; throws when not ancestor
 --FILE--
 <?php
 interface I<K = mixed, V = mixed> {}
@@ -17,7 +17,7 @@ class ChildWithArgs extends WithArgs {}
 
 function show(string $cls, string $iface): void {
     try {
-        $args = (new ReflectionClass($cls))->getGenericArgumentsForParentInterface($iface);
+        $args = (new ReflectionClass($cls))->getGenericArgumentSetsForParentInterface($iface)[0];
     } catch (ReflectionException $e) {
         echo "$cls/$iface: throw ({$e->getMessage()})\n";
         return;

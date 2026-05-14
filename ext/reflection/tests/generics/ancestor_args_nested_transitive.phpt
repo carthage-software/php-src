@@ -13,7 +13,7 @@ class Forwarded<U> implements Mid<U> {}
 class Reordered<X, Y> implements Flip<X, Y> {}
 
 function show(string $class, string $interface): void {
-    $args = (new ReflectionClass($class))->getGenericArgumentsForParentInterface($interface);
+    $args = (new ReflectionClass($class))->getGenericArgumentSetsForParentInterface($interface)[0];
     echo "$class/$interface\n";
     foreach ($args as $arg) {
         echo "  ", $arg->getName();
@@ -31,7 +31,7 @@ show(Concrete::class, Root::class);
 show(Forwarded::class, Root::class);
 show(Reordered::class, PairRoot::class);
 
-$forwardedArgs = (new ReflectionClass(Forwarded::class))->getGenericArgumentsForParentInterface(Root::class);
+$forwardedArgs = (new ReflectionClass(Forwarded::class))->getGenericArgumentSetsForParentInterface(Root::class)[0];
 $forwardedInner = $forwardedArgs[0]->getGenericArguments()[0];
 echo "Forwarded nested parameter owner: ",
     $forwardedInner->getTypeParameter()->getDeclaringEntity()->getName(), "\n";
