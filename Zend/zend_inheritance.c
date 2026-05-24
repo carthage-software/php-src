@@ -209,7 +209,12 @@ static void do_inherit_parent_constructor(zend_class_entry *ce) /* {{{ */
 		return;
 	}
 
-	ce->constructor = parent->constructor;
+	zend_function *substituted = NULL;
+	if (parent->constructor) {
+		substituted = zend_hash_find_ptr(&ce->function_table, parent->constructor->common.function_name);
+	}
+
+	ce->constructor = substituted ? substituted : parent->constructor;
 }
 /* }}} */
 

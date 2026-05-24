@@ -5792,6 +5792,7 @@ ZEND_VM_HOT_HANDLER(64, ZEND_RECV_INIT, NUM, CONST)
 			ZEND_VM_C_GOTO(recv_init_check_type);
 		} else {
 			ZVAL_COPY(param, default_value);
+			ZEND_VM_C_GOTO(recv_init_check_type);
 		}
 	} else {
 ZEND_VM_C_LABEL(recv_init_check_type):

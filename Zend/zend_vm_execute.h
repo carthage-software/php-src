@@ -4257,6 +4257,7 @@ static ZEND_VM_HOT ZEND_OPCODE_HANDLER_RET ZEND_OPCODE_HANDLER_FUNC_CCONV ZEND_R
 			goto recv_init_check_type;
 		} else {
 			ZVAL_COPY(param, default_value);
+			goto recv_init_check_type;
 		}
 	} else {
 recv_init_check_type:
@@ -57016,6 +57017,7 @@ static ZEND_VM_HOT ZEND_OPCODE_HANDLER_RET ZEND_OPCODE_HANDLER_CCONV ZEND_RECV_I
 			goto recv_init_check_type;
 		} else {
 			ZVAL_COPY(param, default_value);
+			goto recv_init_check_type;
 		}
 	} else {
 recv_init_check_type:
