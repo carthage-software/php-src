@@ -3392,12 +3392,23 @@ static void zend_emit_return_type_check(
 			}
 		}
 
-		if (expr && ZEND_TYPE_PURE_MASK(type) == MAY_BE_ANY) {
+		/* For T-bearing returns, keep VERIFY_RETURN_TYPE regardless of the
+		 * effective bound: substituted views on child classes may bind T
+		 * to a stricter type than the parent compiled against, and the
+		 * runtime opcode reads arg_info[-1] dynamically. */
+		const zend_op_array *active_oa = CG(active_op_array);
+		bool t_bearing_return = active_oa->generic_types
+			&& active_oa->generic_types->return_type
+			&& ZEND_TYPE_HAS_TYPE_PARAMETER(*active_oa->generic_types->return_type);
+
+		if (expr && ZEND_TYPE_PURE_MASK(type) == MAY_BE_ANY && !t_bearing_return) {
 			/* we don't need run-time check for mixed return type */
 			return;
 		}
 
-		if (expr && expr->op_type == IS_CONST && ZEND_TYPE_CONTAINS_CODE(type, Z_TYPE(expr->u.constant))) {
+		if (expr && expr->op_type == IS_CONST
+				&& ZEND_TYPE_CONTAINS_CODE(type, Z_TYPE(expr->u.constant))
+				&& !t_bearing_return) {
 			/* we don't need run-time check */
 			return;
 		}
@@ -9058,8 +9069,19 @@ static void zend_compile_params(zend_ast *ast, zend_ast *return_type_ast, uint32
 			| (is_promoted ? _ZEND_IS_PROMOTED_BIT : 0);
 		ZEND_TYPE_FULL_MASK(arg_info->type) |= arg_info_flags;
 		if (opcode == ZEND_RECV) {
-			opline->op2.num = type_ast ?
-				ZEND_TYPE_FULL_MASK(arg_info->type) : MAY_BE_ANY;
+			/* For T-bearing parameters, bake 0 so the fast-path mask check in
+			 * ZEND_RECV's handler always fails and the verify helper runs. */
+			bool t_bearing_param = false;
+			if (type_ast && op_array->generic_types && op_array->generic_types->parameters) {
+				const zend_type *pre = zend_hash_index_find_ptr(op_array->generic_types->parameters, i);
+				t_bearing_param = pre && ZEND_TYPE_HAS_TYPE_PARAMETER(*pre);
+			}
+
+			if (t_bearing_param) {
+				opline->op2.num = 0;
+			} else {
+				opline->op2.num = type_ast ? ZEND_TYPE_FULL_MASK(arg_info->type) : MAY_BE_ANY;
+			}
 		}
 
 		if (is_promoted) {
