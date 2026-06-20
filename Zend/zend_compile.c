@@ -8541,7 +8541,8 @@ static zend_type zend_compile_typename_ex(
 				}
 
 				if (dedup) {
-					/* erased duplicate of a generic-contributed class; skip */
+
+					zend_string_release(ZEND_TYPE_NAME(single_type));
 				} else if (!ZEND_TYPE_IS_COMPLEX(type) && !is_composite) {
 					/* The first class type can be stored directly as the type ptr payload. */
 					ZEND_TYPE_SET_PTR(type, ZEND_TYPE_NAME(single_type));

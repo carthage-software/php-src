@@ -148,6 +148,7 @@ typedef struct _zend_generic_parameter {
 
 typedef struct _zend_generic_parameter_list {
 	uint32_t count;
+	bool persisted;
 	zend_generic_parameter parameters[1];
 } zend_generic_parameter_list;
 
