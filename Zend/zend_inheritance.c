@@ -4358,12 +4358,14 @@ static void zend_do_traits_property_binding(zend_class_entry *ce, zend_class_ent
 				zend_type *default_args = (zend_type *) do_alloca(sizeof(zend_type) * cap, use_heap);
 				if (zend_get_trait_use_binding(ce, i, &bind_args, &bind_arity)) {
 					type = zend_substitute_leaf_type_param(*pre_erasure, bind_args, bind_arity);
+					type = zend_erase_class_type_params(type, ce);
 				} else if (zend_get_target_default_args(traits[i], default_args, cap, &bind_arity)) {
 					type = zend_substitute_leaf_type_param(*pre_erasure, default_args, bind_arity);
+					type = zend_erase_class_type_params(type, ce);
 				}
 
 				free_alloca(default_args, use_heap);
-				if (ZEND_TYPE_HAS_TYPE_PARAMETER(type)) {
+				if (zend_type_needs_erasure(type)) {
 					type = property_info->type;
 				}
 			}
