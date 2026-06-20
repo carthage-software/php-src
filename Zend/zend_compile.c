@@ -8404,37 +8404,36 @@ static zend_type zend_compile_typename_ex(
 			uint32_t type_mask = ZEND_TYPE_FULL_MASK(type);
 
 			if (type_ast->kind == ZEND_AST_TYPE_INTERSECTION) {
-				has_only_iterable_class = false;
-				is_composite = true;
-				/* The first class type can be stored directly as the type ptr payload. */
-				if (ZEND_TYPE_IS_COMPLEX(type) && !ZEND_TYPE_HAS_LIST(type)) {
-					/* Switch from single name to name list. */
-					type_list->num_types = 1;
-					type_list->types[0] = type;
-					/* Clear MAY_BE_* type flags */
-					ZEND_TYPE_FULL_MASK(type_list->types[0]) &= ~_ZEND_TYPE_MAY_BE_MASK;
-				}
-				/* Mark type as list type */
-				ZEND_TYPE_SET_LIST(type, type_list);
-
-				single_type = zend_compile_typename(type_ast);
-				ZEND_ASSERT(ZEND_TYPE_IS_INTERSECTION(single_type));
-
-				type_list->types[type_list->num_types++] = single_type;
-
-				/* Check for trivially redundant class types */
-				for (size_t i = 0; i < type_list->num_types - 1; i++) {
-					if (ZEND_TYPE_IS_INTERSECTION(type_list->types[i])) {
-						zend_are_intersection_types_redundant(single_type, type_list->types[i]);
-						continue;
+				zend_type compiled_intersection = zend_compile_typename(type_ast);
+				if (!ZEND_TYPE_IS_INTERSECTION(compiled_intersection)) {
+					single_type = compiled_intersection;
+				} else {
+					has_only_iterable_class = false;
+					is_composite = true;
+					if (ZEND_TYPE_IS_COMPLEX(type) && !ZEND_TYPE_HAS_LIST(type)) {
+						type_list->num_types = 1;
+						type_list->types[0] = type;
+						ZEND_TYPE_FULL_MASK(type_list->types[0]) &= ~_ZEND_TYPE_MAY_BE_MASK;
 					}
-					/* Type from type list is a simple type */
-					zend_is_intersection_type_redundant_by_single_type(single_type, type_list->types[i]);
+					ZEND_TYPE_SET_LIST(type, type_list);
+
+					single_type = compiled_intersection;
+
+					type_list->types[type_list->num_types++] = single_type;
+
+					for (size_t i = 0; i < type_list->num_types - 1; i++) {
+						if (ZEND_TYPE_IS_INTERSECTION(type_list->types[i])) {
+							zend_are_intersection_types_redundant(single_type, type_list->types[i]);
+							continue;
+						}
+						zend_is_intersection_type_redundant_by_single_type(single_type, type_list->types[i]);
+					}
+					continue;
 				}
-				continue;
+			} else {
+				single_type = zend_compile_single_typename(type_ast);
 			}
 
-			single_type = zend_compile_single_typename(type_ast);
 			uint32_t single_type_mask = ZEND_TYPE_PURE_MASK(single_type);
 
 			if (single_type_mask == MAY_BE_ANY) {
@@ -8539,6 +8538,12 @@ static zend_type zend_compile_typename_ex(
 			zend_generic_parameter *t_param = zend_generic_lookup_name(check_ast);
 			zend_type single_type = zend_compile_single_typename(type_ast);
 
+			if (t_param
+					&& ZEND_TYPE_PURE_MASK(single_type) == MAY_BE_OBJECT
+					&& !ZEND_TYPE_IS_COMPLEX(single_type)) {
+				continue;
+			}
+
 			/* An intersection of union types cannot exist so invalidate it
 			 * Currently only can happen with iterable getting canonicalized to Traversable|array */
 			if (ZEND_TYPE_IS_ITERABLE_FALLBACK(single_type)) {
@@ -8582,10 +8587,13 @@ static zend_type zend_compile_typename_ex(
 			zend_is_type_list_redundant_by_single_type(type_list, single_type);
 		}
 
-		ZEND_ASSERT(list->children == type_list->num_types);
+		ZEND_ASSERT(type_list->num_types <= list->children);
 
-		/* An implicitly nullable intersection type needs to be converted to a DNF type */
-		if (force_allow_null) {
+		if (type_list->num_types == 0) {
+			type = (zend_type) ZEND_TYPE_INIT_CODE(IS_OBJECT, 0, 0);
+		} else if (type_list->num_types == 1) {
+			type = type_list->types[0];
+		} else if (force_allow_null) {
 			zend_type intersection_type = ZEND_TYPE_INIT_NONE(0);
 			ZEND_TYPE_SET_LIST(intersection_type, type_list);
 			ZEND_TYPE_FULL_MASK(intersection_type) |= _ZEND_TYPE_INTERSECTION_BIT;
