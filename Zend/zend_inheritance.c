@@ -1879,6 +1879,7 @@ static zend_type zend_erase_class_type_params(zend_type t, const zend_class_entr
 	if (ZEND_TYPE_HAS_TYPE_PARAMETER(t)) {
 		const zend_type_parameter_ref *ref = ZEND_TYPE_TYPE_PARAMETER(t);
 		if (ref->origin != ZEND_GENERIC_ORIGIN_CLASS_LIKE
+				|| !ce
 				|| !ce->generic_parameters
 				|| ref->index >= ce->generic_parameters->count) {
 			return t;
@@ -1903,7 +1904,7 @@ static zend_type zend_erase_class_type_params(zend_type t, const zend_class_entr
 		return result;
 	}
 
-	if (ZEND_TYPE_HAS_LIST(t) && zend_type_needs_erasure(t)) {
+	if (ZEND_TYPE_HAS_LIST(t)) {
 		const zend_type_list *list = ZEND_TYPE_LIST(t);
 		bool intersect = (ZEND_TYPE_FULL_MASK(t) & _ZEND_TYPE_INTERSECTION_BIT) != 0;
 		zend_type acc;
@@ -3510,7 +3511,9 @@ static void zend_substitute_trait_method_arg_info(
 		const zend_type *pre = orig_op->generic_types->return_type;
 		if (ZEND_TYPE_HAS_TYPE_PARAMETER(*pre)) {
 			zend_type sub = zend_substitute_leaf_type_param(*pre, bind_args, bind_arity);
-			if (!ZEND_TYPE_HAS_TYPE_PARAMETER(sub)) {
+
+			sub = zend_erase_class_type_params(sub, NULL);
+			if (!zend_type_needs_erasure(sub)) {
 				if (!new_block) {
 					new_block = zend_clone_arg_info_block(orig_block, total);
 				}
@@ -3534,7 +3537,8 @@ static void zend_substitute_trait_method_arg_info(
 			}
 
 			zend_type sub = zend_substitute_leaf_type_param(*pre_erasure, bind_args, bind_arity);
-			if (ZEND_TYPE_HAS_TYPE_PARAMETER(sub)) {
+			sub = zend_erase_class_type_params(sub, NULL);
+			if (zend_type_needs_erasure(sub)) {
 				continue;
 			}
 
