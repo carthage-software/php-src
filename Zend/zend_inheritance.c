@@ -1071,7 +1071,7 @@ static bool zend_get_target_default_args(
 }
 
 static zend_type zend_erase_class_type_params(zend_type t, const zend_class_entry *ce);
-static bool zend_type_contains_type_parameter(zend_type t);
+static bool zend_type_needs_erasure(zend_type t);
 
 /* If ce supplies type arguments to proto's declaring scope (directly,
  * transitively, or via parameter defaults), returns proto's pre-erasure type
@@ -1111,7 +1111,7 @@ static zend_type zend_substitute_proto_type(
 	} else {
 		zend_type substituted = zend_substitute_leaf_type_param(*pre_erasure, args, arity);
 		zend_type erased = zend_erase_class_type_params(substituted, ce);
-		result = zend_type_contains_type_parameter(erased) ? fallback : erased;
+		result = zend_type_needs_erasure(erased) ? fallback : erased;
 	}
 
 	free_alloca(args, use_heap);
@@ -1855,15 +1855,18 @@ static zend_type zend_synth_variance_merged_type(zend_type a, zend_type b, bool 
 	return result;
 }
 
-static bool zend_type_contains_type_parameter(zend_type t)
+static bool zend_type_needs_erasure(zend_type t)
 {
 	if (ZEND_TYPE_HAS_TYPE_PARAMETER(t)) {
+		return true;
+	}
+	if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(t)) {
 		return true;
 	}
 	if (ZEND_TYPE_HAS_LIST(t)) {
 		const zend_type_list *list = ZEND_TYPE_LIST(t);
 		for (uint32_t i = 0; i < list->num_types; i++) {
-			if (zend_type_contains_type_parameter(list->types[i])) {
+			if (zend_type_needs_erasure(list->types[i])) {
 				return true;
 			}
 		}
@@ -1882,20 +1885,25 @@ static zend_type zend_erase_class_type_params(zend_type t, const zend_class_entr
 		}
 
 		zend_type bound = ce->generic_parameters->parameters[ref->index].bound;
-		zend_type result;
-		if (ZEND_TYPE_IS_SET(bound)) {
-			result = bound;
-			zend_type_copy_ctor(&result, /* use_arena */ true, /* persistent */ false);
-		} else {
-			result = (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_ANY);
-		}
+		zend_type result = ZEND_TYPE_IS_SET(bound)
+			? bound
+			: (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_ANY);
 		if (ZEND_TYPE_FULL_MASK(t) & _ZEND_TYPE_NULLABLE_BIT) {
 			ZEND_TYPE_FULL_MASK(result) |= _ZEND_TYPE_NULLABLE_BIT;
 		}
 		return result;
 	}
 
-	if (ZEND_TYPE_HAS_LIST(t) && zend_type_contains_type_parameter(t)) {
+	if (ZEND_TYPE_HAS_NAMED_WITH_ARGS(t)) {
+		const zend_type_named_with_args *nwa = ZEND_TYPE_NAMED_WITH_ARGS(t);
+		zend_type result = (zend_type) ZEND_TYPE_INIT_CLASS(nwa->name, 0, 0);
+		if (ZEND_TYPE_FULL_MASK(t) & _ZEND_TYPE_NULLABLE_BIT) {
+			ZEND_TYPE_FULL_MASK(result) |= _ZEND_TYPE_NULLABLE_BIT;
+		}
+		return result;
+	}
+
+	if (ZEND_TYPE_HAS_LIST(t) && zend_type_needs_erasure(t)) {
 		const zend_type_list *list = ZEND_TYPE_LIST(t);
 		bool intersect = (ZEND_TYPE_FULL_MASK(t) & _ZEND_TYPE_INTERSECTION_BIT) != 0;
 		zend_type acc;
@@ -2501,12 +2509,14 @@ static void do_inherit_property(zend_property_info *parent_info, zend_string *ke
 					have_args = zend_get_target_default_args(parent_info->ce, bound_args, cap, &bound_arity);
 				}
 
-				zend_type sub = have_args
-					? zend_substitute_leaf_type_param(*pre_erasure, bound_args, bound_arity)
-					: (zend_type) ZEND_TYPE_INIT_NONE(0);
+				zend_type sub = (zend_type) ZEND_TYPE_INIT_NONE(0);
+				if (have_args) {
+					zend_type substituted = zend_substitute_leaf_type_param(*pre_erasure, bound_args, bound_arity);
+					sub = zend_erase_class_type_params(substituted, ce);
+				}
 				free_alloca(bound_args, use_heap);
 				if (have_args) {
-					if (!ZEND_TYPE_HAS_TYPE_PARAMETER(sub)) {
+					if (!zend_type_needs_erasure(sub)) {
 						zend_property_info *clone = zend_arena_alloc(&CG(arena), sizeof(*clone));
 						*clone = *parent_info;
 						clone->flags |= ZEND_ACC_GENERIC_CLONE;
