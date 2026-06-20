@@ -8403,6 +8403,23 @@ static void zend_is_type_list_redundant_by_single_type(const zend_type_list *typ
 
 static zend_type zend_compile_typename(zend_ast *ast);
 
+static bool zend_union_contains_class(zend_type type, const zend_type_list *type_list, const zend_string *name)
+{
+	if (ZEND_TYPE_HAS_LIST(type)) {
+		for (uint32_t i = 0; i < type_list->num_types; i++) {
+			if (!ZEND_TYPE_IS_INTERSECTION(type_list->types[i])
+					&& ZEND_TYPE_HAS_NAME(type_list->types[i])
+					&& zend_string_equals_ci(ZEND_TYPE_NAME(type_list->types[i]), name)) {
+				return true;
+			}
+		}
+	} else if (ZEND_TYPE_HAS_NAME(type)) {
+		return zend_string_equals_ci(ZEND_TYPE_NAME(type), name);
+	}
+
+	return false;
+}
+
 static zend_type zend_compile_typename_ex(
 		zend_ast *ast, bool force_allow_null, bool *forced_allow_null) /* {{{ */
 {
@@ -8425,6 +8442,10 @@ static zend_type zend_compile_typename_ex(
 
 		type_list = do_alloca(ZEND_TYPE_LIST_SIZE(list->children), use_heap);
 		type_list->num_types = 0;
+
+		ALLOCA_FLAG(generic_names_use_heap)
+		zend_string **generic_class_names = do_alloca(sizeof(zend_string *) * list->children, generic_names_use_heap);
+		uint32_t generic_class_name_count = 0;
 
 		for (uint32_t i = 0; i < list->children; i++) {
 			zend_ast *type_ast = list->child[i];
@@ -8499,7 +8520,29 @@ static zend_type zend_compile_typename_ex(
 			ZEND_TYPE_FULL_MASK(single_type) &= ~_ZEND_TYPE_MAY_BE_MASK;
 
 			if (ZEND_TYPE_IS_COMPLEX(single_type)) {
-				if (!ZEND_TYPE_IS_COMPLEX(type) && !is_composite) {
+				bool dedup = false;
+				if (ZEND_TYPE_HAS_NAME(single_type)) {
+					zend_string *incoming_name = ZEND_TYPE_NAME(single_type);
+					bool incoming_is_generic = (type_ast->kind == ZEND_AST_GENERIC_NAMED_TYPE);
+					for (uint32_t gi = 0; gi < generic_class_name_count; gi++) {
+						if (zend_string_equals_ci(generic_class_names[gi], incoming_name)) {
+							dedup = true;
+							break;
+						}
+					}
+
+					if (!dedup && incoming_is_generic && zend_union_contains_class(type, type_list, incoming_name)) {
+						dedup = true;
+					}
+
+					if (!dedup && incoming_is_generic) {
+						generic_class_names[generic_class_name_count++] = incoming_name;
+					}
+				}
+
+				if (dedup) {
+					/* erased duplicate of a generic-contributed class; skip */
+				} else if (!ZEND_TYPE_IS_COMPLEX(type) && !is_composite) {
 					/* The first class type can be stored directly as the type ptr payload. */
 					ZEND_TYPE_SET_PTR(type, ZEND_TYPE_NAME(single_type));
 					ZEND_TYPE_FULL_MASK(type) |= _ZEND_TYPE_NAME_BIT;
@@ -8520,6 +8563,8 @@ static zend_type zend_compile_typename_ex(
 				}
 			}
 		}
+
+		free_alloca(generic_class_names, generic_names_use_heap);
 
 		if (collapse_union_to_mixed) {
 			free_alloca(type_list, use_heap);
