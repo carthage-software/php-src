@@ -168,6 +168,8 @@ static YYSIZE_T zend_yytnamerr(char*, const char*);
 %token <ident> T_TRAIT         "'trait'"
 %token <ident> T_INTERFACE     "'interface'"
 %token <ident> T_ENUM          "'enum'"
+%token <ident> T_IN            "'in'"
+%token <ident> T_OUT           "'out'"
 %token <ident> T_EXTENDS       "'extends'"
 %token <ident> T_IMPLEMENTS    "'implements'"
 %token <ident> T_NAMESPACE     "'namespace'"
@@ -323,6 +325,7 @@ reserved_non_modifiers:
 	| T_FUNCTION | T_CONST | T_RETURN | T_PRINT | T_YIELD | T_LIST | T_SWITCH | T_ENDSWITCH | T_CASE | T_DEFAULT | T_BREAK
 	| T_ARRAY | T_CALLABLE | T_EXTENDS | T_IMPLEMENTS | T_NAMESPACE | T_TRAIT | T_INTERFACE | T_CLASS
 	| T_CLASS_C | T_TRAIT_C | T_FUNC_C | T_METHOD_C | T_LINE | T_FILE | T_DIR | T_NS_C | T_FN | T_MATCH | T_ENUM
+	| T_IN | T_OUT
 	| T_PROPERTY_C
 ;
 
@@ -876,8 +879,8 @@ generic_type_parameter:
 
 optional_generic_variance:
 		%empty   { $$ = 0; }
-	|	'+'      { $$ = 1; }
-	|	'-'      { $$ = 2; }
+	|	T_OUT    { $$ = 1; }
+	|	T_IN     { $$ = 2; }
 ;
 
 optional_generic_type_parameter_bound:
@@ -1566,9 +1569,11 @@ function_call:
 			$$ = zend_ast_create(ZEND_AST_CALL, zend_ast_create_zval(&zv), $2, NULL);
 		}
 	|	class_name T_PAAMAYIM_NEKUDOTAYIM member_name optional_call_type_argument_list argument_list
-			{ $$ = zend_ast_create(ZEND_AST_STATIC_CALL, $1, $3, $5, $4); }
+			{ $$ = zend_ast_create(ZEND_AST_STATIC_CALL, $1, $3, $5, $4, NULL); }
 	|	variable_class_name T_PAAMAYIM_NEKUDOTAYIM member_name optional_call_type_argument_list argument_list
-			{ $$ = zend_ast_create(ZEND_AST_STATIC_CALL, $1, $3, $5, $4); }
+			{ $$ = zend_ast_create(ZEND_AST_STATIC_CALL, $1, $3, $5, $4, NULL); }
+	|	name call_type_argument_list T_PAAMAYIM_NEKUDOTAYIM member_name optional_call_type_argument_list argument_list
+			{ $$ = zend_ast_create(ZEND_AST_STATIC_CALL, $1, $4, $6, $5, $2); }
 	|	callable_expr optional_call_type_argument_list { $<num>$ = CG(zend_lineno); } argument_list {
 			$$ = zend_ast_create(ZEND_AST_CALL, $1, $4, $2);
 			$$->lineno = $<num>3;

@@ -382,8 +382,8 @@ static zend_vm_opcode_handler_func_t zend_vm_get_opcode_handler_func(uint8_t opc
 #else
 # define ZEND_OPCODE_HANDLER_ARGS zend_execute_data *execute_data, const zend_op *opline
 # define ZEND_OPCODE_HANDLER_ARGS_PASSTHRU execute_data, opline
-# define ZEND_OPCODE_HANDLER_ARGS_EX ZEND_OPCODE_HANDLER_ARGS, 
-# define ZEND_OPCODE_HANDLER_ARGS_PASSTHRU_EX ZEND_OPCODE_HANDLER_ARGS_PASSTHRU, 
+# define ZEND_OPCODE_HANDLER_ARGS_EX ZEND_OPCODE_HANDLER_ARGS,
+# define ZEND_OPCODE_HANDLER_ARGS_PASSTHRU_EX ZEND_OPCODE_HANDLER_ARGS_PASSTHRU,
 #endif
 
 #if defined(ZEND_VM_FP_GLOBAL_REG) && defined(ZEND_VM_IP_GLOBAL_REG)
@@ -22005,7 +22005,12 @@ static ZEND_OPCODE_HANDLER_RET ZEND_OPCODE_HANDLER_FUNC_CCONV ZEND_VERIFY_GENERI
 	SAVE_OPLINE();
 
 	if (IS_TMP_VAR == IS_UNUSED) {
-		zend_check_generic_call_arguments(call->func, arity, args_box);
+		if (opline->op1.num == 0) {
+			zend_check_generic_call_arguments(call->func, arity, args_box);
+		} else {
+			zend_class_entry *ce = call->func->common.scope;
+			zend_check_generic_static_class_arguments(ce, arity, args_box);
+		}
 	} else {
 		zval *new_obj = EX_VAR(opline->op1.var);
 		zend_class_entry *ce = Z_OBJCE_P(new_obj);
@@ -37357,7 +37362,12 @@ static ZEND_OPCODE_HANDLER_RET ZEND_OPCODE_HANDLER_FUNC_CCONV ZEND_VERIFY_GENERI
 	SAVE_OPLINE();
 
 	if (IS_UNUSED == IS_UNUSED) {
-		zend_check_generic_call_arguments(call->func, arity, args_box);
+		if (opline->op1.num == 0) {
+			zend_check_generic_call_arguments(call->func, arity, args_box);
+		} else {
+			zend_class_entry *ce = call->func->common.scope;
+			zend_check_generic_static_class_arguments(ce, arity, args_box);
+		}
 	} else {
 		zval *new_obj = EX_VAR(opline->op1.var);
 		zend_class_entry *ce = Z_OBJCE_P(new_obj);
@@ -74563,7 +74573,12 @@ static ZEND_OPCODE_HANDLER_RET ZEND_OPCODE_HANDLER_CCONV ZEND_VERIFY_GENERIC_ARG
 	SAVE_OPLINE();
 
 	if (IS_TMP_VAR == IS_UNUSED) {
-		zend_check_generic_call_arguments(call->func, arity, args_box);
+		if (opline->op1.num == 0) {
+			zend_check_generic_call_arguments(call->func, arity, args_box);
+		} else {
+			zend_class_entry *ce = call->func->common.scope;
+			zend_check_generic_static_class_arguments(ce, arity, args_box);
+		}
 	} else {
 		zval *new_obj = EX_VAR(opline->op1.var);
 		zend_class_entry *ce = Z_OBJCE_P(new_obj);
@@ -89915,7 +89930,12 @@ static ZEND_OPCODE_HANDLER_RET ZEND_OPCODE_HANDLER_CCONV ZEND_VERIFY_GENERIC_ARG
 	SAVE_OPLINE();
 
 	if (IS_UNUSED == IS_UNUSED) {
-		zend_check_generic_call_arguments(call->func, arity, args_box);
+		if (opline->op1.num == 0) {
+			zend_check_generic_call_arguments(call->func, arity, args_box);
+		} else {
+			zend_class_entry *ce = call->func->common.scope;
+			zend_check_generic_static_class_arguments(ce, arity, args_box);
+		}
 	} else {
 		zval *new_obj = EX_VAR(opline->op1.var);
 		zend_class_entry *ce = Z_OBJCE_P(new_obj);
@@ -123561,4 +123581,3 @@ ZEND_API int ZEND_FASTCALL zend_vm_call_opcode_handler(zend_execute_data* ex)
 #endif
 	return ret;
 }
-

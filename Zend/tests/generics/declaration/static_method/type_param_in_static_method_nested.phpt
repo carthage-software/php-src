@@ -1,5 +1,5 @@
 --TEST--
-Errors: class type parameter cannot be nested inside a generic type in a static method signature
+Static methods: class type parameter is allowed nested inside a generic type in a static method signature
 --FILE--
 <?php
 final readonly class Optional<U> {
@@ -9,6 +9,7 @@ final readonly class Optional<U> {
 class Example<T> {
     public static function unwrap(Optional<T> $value): mixed { return $value->value; }
 }
+echo "ok\n";
 ?>
---EXPECTF--
-Fatal error: Type parameter T is bound to Example and cannot be used in static context in %s on line %d
+--EXPECT--
+ok

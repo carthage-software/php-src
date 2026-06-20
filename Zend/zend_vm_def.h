@@ -8942,7 +8942,12 @@ ZEND_VM_HANDLER(212, ZEND_VERIFY_GENERIC_ARGUMENTS, TMP|UNUSED, UNUSED)
 	SAVE_OPLINE();
 
 	if (OP1_TYPE == IS_UNUSED) {
-		zend_check_generic_call_arguments(call->func, arity, args_box);
+		if (opline->op1.num == 0) {
+			zend_check_generic_call_arguments(call->func, arity, args_box);
+		} else {
+			zend_class_entry *ce = call->func->common.scope;
+			zend_check_generic_static_class_arguments(ce, arity, args_box);
+		}
 	} else {
 		zval *new_obj = EX_VAR(opline->op1.var);
 		zend_class_entry *ce = Z_OBJCE_P(new_obj);

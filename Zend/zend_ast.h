@@ -176,12 +176,13 @@ enum _zend_ast_kind {
 	// Pseudo node for initializing enums
 	ZEND_AST_CONST_ENUM_INIT,
 
-	/* Method/static call forms with optional call_type_arguments slot. */
+	/* Method call forms with optional call_type_arguments slot. */
 	ZEND_AST_METHOD_CALL,
 	ZEND_AST_NULLSAFE_METHOD_CALL,
-	ZEND_AST_STATIC_CALL,
 
 	/* 5 child nodes */
+	/* Static call: class, method, args, call_type_arguments, class_type_arguments. */
+	ZEND_AST_STATIC_CALL = 5 << ZEND_AST_NUM_CHILDREN_SHIFT,
 
 	/* 6 child nodes */
 	ZEND_AST_PARAM = 6 << ZEND_AST_NUM_CHILDREN_SHIFT,

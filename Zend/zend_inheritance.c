@@ -1107,7 +1107,22 @@ static zend_type zend_substitute_proto_type(
 		result = fallback;
 	} else {
 		zend_type substituted = zend_substitute_leaf_type_param(*pre_erasure, args, arity);
-		result = ZEND_TYPE_HAS_TYPE_PARAMETER(substituted) ? fallback : substituted;
+		if (!ZEND_TYPE_HAS_TYPE_PARAMETER(substituted)) {
+			result = substituted;
+		} else {
+			const zend_type_parameter_ref *sref = ZEND_TYPE_TYPE_PARAMETER(substituted);
+			if (sref->origin == ZEND_GENERIC_ORIGIN_CLASS_LIKE
+					&& ce->generic_parameters
+					&& sref->index < ce->generic_parameters->count
+					&& ZEND_TYPE_IS_SET(ce->generic_parameters->parameters[sref->index].bound)) {
+				result = ce->generic_parameters->parameters[sref->index].bound;
+				if (ZEND_TYPE_FULL_MASK(substituted) & _ZEND_TYPE_NULLABLE_BIT) {
+					ZEND_TYPE_FULL_MASK(result) |= _ZEND_TYPE_NULLABLE_BIT;
+				}
+			} else {
+				result = fallback;
+			}
+		}
 	}
 
 	free_alloca(args, use_heap);
@@ -4879,8 +4894,8 @@ static const char *zend_variance_polarity_name(zend_variance_polarity p)
 static const char *zend_variance_marker(zend_generic_variance v)
 {
 	switch (v) {
-		case ZEND_GENERIC_VARIANCE_COVARIANT:     return "+";
-		case ZEND_GENERIC_VARIANCE_CONTRAVARIANT: return "-";
+		case ZEND_GENERIC_VARIANCE_COVARIANT:     return "out";
+		case ZEND_GENERIC_VARIANCE_CONTRAVARIANT: return "in";
 		default:                                  return "";
 	}
 }
@@ -4917,7 +4932,7 @@ static void zend_variance_walk(
 		zend_generic_variance declared = params->parameters[ref->index].variance;
 		if (!zend_variance_compatible(declared, pol)) {
 			zend_error_noreturn(E_COMPILE_ERROR,
-				"Type parameter %s declared %s (%sT) cannot appear in %s position",
+				"Type parameter %s declared %s (%s T) cannot appear in %s position",
 				ZSTR_VAL(ref->name),
 				zend_variance_polarity_name(zend_variance_polarity_from(declared)),
 				zend_variance_marker(declared),

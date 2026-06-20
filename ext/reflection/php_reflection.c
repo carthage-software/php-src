@@ -8694,10 +8694,10 @@ ZEND_METHOD(ReflectionGenericTypeParameter, __toString)
 
 	switch (ref->param->variance) {
 		case 1:
-			smart_str_appendc(&str, '+');
+			smart_str_appends(&str, "out ");
 			break;
 		case 2:
-			smart_str_appendc(&str, '-');
+			smart_str_appends(&str, "in ");
 			break;
 		default:
 			break;
