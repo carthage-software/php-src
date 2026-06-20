@@ -1911,6 +1911,11 @@ static zend_type zend_erase_class_type_params(zend_type t, const zend_class_entr
 		bool have_acc = false;
 		for (uint32_t i = 0; i < list->num_types; i++) {
 			zend_type member = zend_erase_class_type_params(list->types[i], ce);
+			if (intersect
+					&& ZEND_TYPE_PURE_MASK(member) == MAY_BE_OBJECT
+					&& !ZEND_TYPE_IS_COMPLEX(member)) {
+				continue;
+			}
 			if (!have_acc) {
 				acc = member;
 				zend_type_copy_ctor(&acc, /* use_arena */ true, /* persistent */ false);
@@ -1918,6 +1923,10 @@ static zend_type zend_erase_class_type_params(zend_type t, const zend_class_entr
 			} else {
 				acc = zend_synth_variance_merged_type(acc, member, intersect);
 			}
+		}
+
+		if (!have_acc) {
+			acc = (zend_type) ZEND_TYPE_INIT_CODE(IS_OBJECT, 0, 0);
 		}
 
 		if (!intersect) {

@@ -618,6 +618,34 @@ static void zend_check_generic_argument_bounds(
 		if (!ZEND_TYPE_IS_SET(bound)) {
 			continue;
 		}
+		/* This runs at runtime (turbofish / new), where autoloading is safe.
+		 * Resolve the argument's class types up front so the bound check does not
+		 * spuriously report an as-yet-unloaded class as failing (e.g. an `object`
+		 * bound, which any class satisfies once it is known to be a class). */
+		const zend_type *single_type;
+		ZEND_TYPE_FOREACH(args->args[i], single_type) {
+			if (ZEND_TYPE_HAS_NAME(*single_type)) {
+				zend_string *cname = ZEND_TYPE_NAME(*single_type);
+				if (zend_lookup_class(cname) == NULL) {
+					/* Could not load the class argument; report it as not
+					 * satisfying the bound rather than silently passing. */
+					zend_string *arg_str = zend_type_to_string(args->args[i]);
+					zend_type display = ZEND_TYPE_IS_SET(params->parameters[i].bound_pre_erasure)
+						? params->parameters[i].bound_pre_erasure
+						: bound;
+					zend_string *bound_str = zend_type_to_string(display);
+					zend_throw_error(zend_ce_type_error,
+						"Type argument %u to %s %s does not satisfy the bound %s on parameter %s, %s given",
+						i + 1, callee_kind, callee_qualified_name,
+						ZSTR_VAL(bound_str),
+						params->parameters[i].name ? ZSTR_VAL(params->parameters[i].name) : "?",
+						ZSTR_VAL(arg_str));
+					zend_string_release(arg_str);
+					zend_string_release(bound_str);
+					return;
+				}
+			}
+		} ZEND_TYPE_FOREACH_END();
 		if (zend_check_generic_arg_satisfies_bound(NULL, args->args[i], NULL, bound) != INHERITANCE_SUCCESS) {
 			zend_string *arg_str = zend_type_to_string(args->args[i]);
 			zend_type display = ZEND_TYPE_IS_SET(params->parameters[i].bound_pre_erasure)
